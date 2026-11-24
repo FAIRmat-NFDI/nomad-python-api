@@ -4,5 +4,6 @@ __pycache__/
 .venv/
 .venv-smoke/
 .uv-tools/
+/.env
 dist/
 site/

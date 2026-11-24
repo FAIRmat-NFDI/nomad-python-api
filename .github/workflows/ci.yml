@@ -5,6 +5,7 @@ on:
     branches: [develop, main]
   push:
     branches: [develop, main]
+  workflow_dispatch:
 
 permissions:
   contents: read
@@ -41,11 +42,15 @@ jobs:
       - run: uv build
       - name: Install and import the wheel offline
         run: |
+          uv export --locked --no-default-groups --no-emit-project -o "$RUNNER_TEMP/runtime-requirements.txt"
+          uv run --no-project --python "$UV_PYTHON" --with pip python -m pip download \
+            --require-hashes --only-binary=:all: -r "$RUNNER_TEMP/runtime-requirements.txt" \
+            -d "$RUNNER_TEMP/wheelhouse"
           uv venv --offline "$RUNNER_TEMP/wheel-smoke"
           smoke_python="$RUNNER_TEMP/wheel-smoke/bin/python"
-          uv pip install --offline --no-index --python "$smoke_python" dist/*.whl
+          uv pip install --offline --no-index --find-links "$RUNNER_TEMP/wheelhouse" --python "$smoke_python" dist/*.whl
           cd "$RUNNER_TEMP"
-          "$smoke_python" -I -c 'from importlib.metadata import requires; import nomad_python_api; assert nomad_python_api.__all__ == []; assert not requires("nomad-python-api")'
+          "$smoke_python" -I -c 'from nomad_python_api import NomadClient, Scope; from nomad_python_api.identity import BearerTokenCredential; assert Scope.USERS_READ.value == "users:read"'
       - name: Upload the tested distributions
         if: github.event_name == 'push' && !github.event.deleted && github.ref == 'refs/heads/main' && matrix.python-version == '3.12'
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
@@ -105,16 +110,48 @@ jobs:
               sys.exit(f"Bump the package version before merging to main (currently {previous}).")
           '
       - run: uv run --no-sync mkdocs build --strict -f mkdocs.yml
-      - run: uv run --no-sync mkdocs build --strict -f mkdocs.dev.yml
+      - run: uv run --no-sync mkdocs build --strict -f mkdocs.public.yml
+      - name: Check built docs assets
+        run: |
+          uv run --no-sync python docs/theme/check_site_assets.py \
+            site/combined/index.html site/combined/dev/oasis/index.html \
+            site/user/index.html site/user/identity/rest.html
       - name: Upload the user guide for GitHub Pages
         if: github.event_name == 'push' && !github.event.deleted && github.ref == 'refs/heads/develop'
         uses: actions/upload-pages-artifact@fc324d3547104276b827a68afc52ff2a11cc49c9 # v5.0.0
         with:
           path: site/user
 
+  live:
+    name: Live NOMAD test
+    if: >-
+      (github.event_name == 'workflow_dispatch' ||
+      (github.event_name == 'push' && !github.event.deleted)) &&
+      (github.ref == 'refs/heads/develop' || github.ref == 'refs/heads/main')
+    needs: [package, docs]
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    environment: nomad-test
+    env:
+      UV_PYTHON: '3.12'
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: astral-sh/setup-uv@1db35dd8eee11c5894872e0b383ae6c406cf738d # v10.4.0
+        with:
+          version: '0.13.9'
+          require-checksums: true
+          enable-cache: false
+      - run: uv sync --locked
+      - name: Check the real NOMAD test account endpoint
+        env:
+          NOMAD_TEST_PAT: ${{ secrets.NOMAD_TEST_PAT }}
+        run: uv run --no-sync python -m pytest -m integration tests/integration
+
   publish-docs:
     if: github.event_name == 'push' && !github.event.deleted && github.ref == 'refs/heads/develop'
-    needs: [package, docs]
+    needs: [package, docs, live]
     runs-on: ubuntu-latest
     permissions:
       pages: write
@@ -128,7 +165,7 @@ jobs:
 
   publish-pypi:
     if: github.event_name == 'push' && !github.event.deleted && github.ref == 'refs/heads/main'
-    needs: [package, docs]
+    needs: [package, docs, live]
     runs-on: ubuntu-latest
     permissions:
       id-token: write
