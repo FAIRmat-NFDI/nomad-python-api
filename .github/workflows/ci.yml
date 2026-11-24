@@ -144,8 +144,9 @@ jobs:
           require-checksums: true
           enable-cache: false
       - run: uv sync --locked
-      - name: Check the real NOMAD test account endpoint
+      - name: Check the configured NOMAD account endpoint
         env:
+          NOMAD_TEST_API_URL: ${{ vars.NOMAD_TEST_API_URL }}
           NOMAD_TEST_PAT: ${{ secrets.NOMAD_TEST_PAT }}
         run: uv run --no-sync python -m pytest -m integration tests/integration
 

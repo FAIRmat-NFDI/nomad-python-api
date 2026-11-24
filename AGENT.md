@@ -291,7 +291,7 @@ uv run mkdocs build --strict -f mkdocs.internal.yml
 
 - **`ci.yml`.** Run the configured checks on PRs and pushes to `main` across supported Python versions. Keep the offline suite deterministic.
 - **`security.yml`.** Once approved, run `pip-audit` and CodeQL on PRs and weekly. Use Dependabot for dependency updates.
-- **Integration.** Run the approved read-only live suite against the NOMAD test deployment on trusted `develop` and `main` pushes and on manual dispatch from those branches. Keep credentials isolated from PR jobs. Additional integration targets, such as a local Oasis, require authorization.
+- **Integration.** Run the approved read-only live suite against the deployment configured in the `nomad-test` GitHub environment on trusted `develop` and `main` pushes and on manual dispatch from those branches. Keep credentials isolated from PR jobs. Additional integration targets, such as a local Oasis, require authorization.
 - **Deployment.** Branch from `develop` as `dev/<name>` and open a PR back to `develop`. After manual review, promote `develop` to `main` through a PR. The first scaffold commit is the only direct-commit exception on `main`. After CI passes on a push to `develop`, deploy user docs to GitHub Pages. After CI passes on a push to `main`, publish the wheel and sdist to PyPI via Trusted Publishing. Increase the package version before each promotion. Keep developer and internal docs out of the Pages artifact. See [Branches and deployment](docs/dev/deployment.md).
 
 ## Roadmap after the scaffold
