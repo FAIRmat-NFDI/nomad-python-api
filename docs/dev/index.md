@@ -33,7 +33,7 @@ Fill in `NOMAD_TEST_PAT` and run the live suite explicitly:
 uv run --no-sync --env-file .env python -m pytest -m integration tests/integration
 ```
 
-The suite checks that the real `GET /users/me` endpoint returns an account with the PAT and refuses a request without credentials. It neither prints account data nor changes it. The default pytest invocation excludes live tests. If `NOMAD_TEST_API_URL` is unset, the suite uses the NOMAD test deployment, as it does in [CI](deployment.md#one-time-github-and-pypi-setup).
+Both live checks require `NOMAD_TEST_API_URL`. They call the same real `GET /users/me` endpoint to verify that it accepts the PAT and refuses a request without credentials. The suite neither prints account data nor changes it. The default pytest invocation excludes live tests. [Configure the live checks on GitHub](deployment.md#one-time-github-and-pypi-setup).
 
 ## Optional wheel build and verification
 
