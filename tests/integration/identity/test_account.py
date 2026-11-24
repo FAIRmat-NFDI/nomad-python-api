@@ -14,13 +14,18 @@ pytestmark = pytest.mark.integration
 
 @pytest.fixture(scope="module")
 def endpoint() -> str:
-    configured_url = os.environ.get("NOMAD_TEST_API_URL", "")
+    configured_url = os.environ.get("NOMAD_TEST_API_URL", "").strip()
+    if not configured_url:
+        pytest.fail("NOMAD_TEST_API_URL is missing or empty.", pytrace=False)
     if configured_url.startswith("https://"):
         try:
             return normalize_endpoint(configured_url)
         except ValueError:
             pass
-    pytest.fail("Set NOMAD_TEST_API_URL to a complete HTTPS NOMAD API base URL.", pytrace=False)
+    pytest.fail(
+        "NOMAD_TEST_API_URL must be a plain HTTPS API base URL ending in /api/v1.",
+        pytrace=False,
+    )
 
 
 def test_account_accepts_a_real_pat(endpoint: str) -> None:
