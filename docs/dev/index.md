@@ -14,7 +14,7 @@ uv run --no-sync mkdocs build --strict -f mkdocs.yml
 uv run --no-sync mkdocs build --strict -f mkdocs.public.yml
 ```
 
-The import test and documentation snippets run offline. The combined local build writes to `site/combined/`. The public Usage build writes to `site/user/` for GitHub Pages.
+The import test and documentation snippets run offline. Both builds include the Usage and Developer guides. The local build writes to `site/combined/`, and the GitHub Pages build writes to `site/public/`.
 
 To preview both guides on one server, run `uv run --no-sync mkdocs serve` and open <http://127.0.0.1:8000/>. The selector beside the GitHub link switches between Usage and Developer.
 
