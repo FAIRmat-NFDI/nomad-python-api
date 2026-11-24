@@ -1,0 +1,64 @@
+theme:
+  name: material
+  custom_dir: docs/assets/overrides
+  favicon: assets/favicon.png
+  icon:
+    logo: nomad/nomad-logo-unfilled
+    repo: fontawesome/brands/github
+  font:
+    text: Titillium Web
+  palette:
+    - media: "(prefers-color-scheme: light)"
+      scheme: default
+      primary: custom
+      accent: custom
+      toggle:
+        icon: material/brightness-7
+        name: Switch to dark mode
+    - media: "(prefers-color-scheme: dark)"
+      scheme: slate
+      primary: custom
+      accent: custom
+      toggle:
+        icon: material/brightness-4
+        name: Switch to system preference
+    - media: "(prefers-color-scheme)"
+      toggle:
+        icon: material/brightness-auto
+        name: Switch to light mode
+  features:
+    - navigation.path
+    - navigation.footer
+    - navigation.top
+    - content.code.copy
+    - content.code.annotate
+    - content.tabs.link
+
+repo_url: https://github.com/FAIRmat-NFDI/nomad-python-api
+edit_uri: ""
+use_directory_urls: false
+extra:
+  generator: false
+extra_css:
+  - stylesheets/extra.css
+hooks:
+  - docs/assets/share_assets.py
+watch:
+  - docs/assets
+  - tests/snippets
+plugins:
+  - search
+markdown_extensions:
+  - attr_list
+  - admonition
+  - pymdownx.highlight:
+      anchor_linenums: true
+  - pymdownx.inlinehilite
+  - pymdownx.snippets:
+      check_paths: true
+      dedent_subsections: true
+  - pymdownx.superfences
+  - pymdownx.tabbed:
+      alternate_style: true
+  - toc:
+      permalink: true
