@@ -38,6 +38,6 @@ uv sync --locked --python 3.12 --group docs
 uv run --no-sync mkdocs serve
 ```
 
-Open <http://127.0.0.1:8000/> and use the selector beside the GitHub link to switch between Usage and Developer. Run `uv run --no-sync mkdocs build --strict` to build the combined site into `site/combined/`. The separate `mkdocs.public.yml` configuration builds the Usage guide for GitHub Pages at its `/nomad-python-api/` project path.
+Open <http://127.0.0.1:8000/> and use the selector beside the GitHub link to switch between Usage and Developer. Run `uv run --no-sync mkdocs build --strict` to build both guides into `site/combined/`. The `mkdocs.public.yml` configuration builds the same guides for GitHub Pages under `/nomad-python-api/`.
 
 Both guides use the shared NOMAD Material theme. See [Branches and deployment](docs/dev/deployment.md) for the review flow, GitHub Pages, and PyPI setup.

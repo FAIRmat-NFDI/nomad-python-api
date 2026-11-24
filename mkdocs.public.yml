@@ -1,10 +1,3 @@
-INHERIT: mkdocs.theme.yml
-site_name: NOMAD Python API User Guide
+INHERIT: mkdocs.yml
 site_url: https://fairmat-nfdi.github.io/nomad-python-api/
-docs_dir: docs/user
-site_dir: site/user
-nav:
-  - Home: index.md
-  - Authentication: identity/index.md
-  - REST Reference:
-      - Authentication: identity/rest.md
+site_dir: site/public
