@@ -1,6 +1,6 @@
 theme:
   name: material
-  custom_dir: docs/assets/overrides
+  custom_dir: docs/theme/overrides
   favicon: assets/favicon.png
   icon:
     logo: nomad/nomad-logo-unfilled
@@ -37,14 +37,17 @@ theme:
 repo_url: https://github.com/FAIRmat-NFDI/nomad-python-api
 edit_uri: ""
 use_directory_urls: false
+validation:
+  links:
+    anchors: warn
 extra:
   generator: false
 extra_css:
   - stylesheets/extra.css
 hooks:
-  - docs/assets/share_assets.py
+  - docs/theme/share_assets.py
 watch:
-  - docs/assets
+  - docs/theme
   - tests/snippets
 plugins:
   - search
@@ -57,7 +60,11 @@ markdown_extensions:
   - pymdownx.snippets:
       check_paths: true
       dedent_subsections: true
-  - pymdownx.superfences
+  - pymdownx.superfences:
+      custom_fences:
+        - name: mermaid
+          class: mermaid
+          format: !!python/name:pymdownx.superfences.fence_code_format
   - pymdownx.tabbed:
       alternate_style: true
   - toc:

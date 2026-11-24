@@ -160,7 +160,7 @@ Use the `src/` layout and take cues from Azure, AWS, and FAIRmat-NFDI. The struc
 | Package | `src/nomad_python_api/` with `__init__.py`, `_version.py`, `_config.py`, `_client.py`, `exceptions.py`, `identity/`, `operations/`, `models/`, `schema/`, `aio/`, and `py.typed` |
 | Transport | `_core/` for pipeline, transport, paging, polling, cache, and policy modules. `_protocol/rest/` for typed requests and `_protocol/graph/` for builders and directives. |
 | Tests | `tests/unit/` mirrors the package. Use `tests/integration/`, `tests/snippets/`, `tests/fixtures/`, and `tests/conftest.py` for live checks, examples, fixtures, and shared setup. |
-| Docs | `docs/user/`, `docs/dev/`, `docs/internal/`, `docs/assets/`, and the three MkDocs configs below. |
+| Docs | `docs/user/`, `docs/dev/`, `docs/internal/`, `docs/theme/`, and the three MkDocs configs below. |
 | Automation | `.github/workflows/` for CI, security, docs, and release. Use `.github/PULL_REQUEST_TEMPLATE.md`, `.github/dependabot.yml`, and `scripts/check_snippet_coverage.py` when approved. |
 
 Name private modules with a leading underscore. Export the public API deliberately from package entry points and define `__all__` in public modules. Use `begin_*` for long-running operations, `list_*` for paged results, and `get_*` for a single resource. Name operations for domain intent and keep HTTP plumbing internal.
@@ -208,15 +208,15 @@ When relevant, test that a cross-origin response cannot forward credentials, an 
 
 Three documentation sets, all MkDocs-based.
 
-### Doc 1 — User / API usage docs (`docs/user/`, `mkdocs.yml`)
+### Doc 1 — User / API usage docs (`docs/user/`)
 
 - **Style:** follow and inherit from **FAIRmat-NFDI `nomad-docs`** — same `mkdocs-material` theme configuration,
-  palette, logo, `extra_css` and overrides. Copy the relevant theme config and assets into `docs/assets/` and keep a note
-  of the nomad-docs commit they came from in `docs/assets/README.md`.
+  palette, logo, `extra_css` and overrides. Copy the relevant theme config and assets into `docs/theme/` and keep a note
+  of the nomad-docs commit they came from in `docs/theme/README.md`.
 - Start at `docs/user/index.md`. Follow Diátaxis with `tutorials/` for learning, `how-to/` for tasks, `reference/` for API descriptions generated with mkdocstrings, and `explanation/` for concepts such as caching, routing, and migration. Give each page a primary purpose.
 - Include Python examples from `tests/snippets/`. Shell commands such as `pip install` can be written directly.
 
-### Doc 2 — Developer guide (`docs/dev/`, `mkdocs.dev.yml`)
+### Doc 2 — Developer guide (`docs/dev/`)
 
 For people who develop or extend the library.
 
@@ -285,13 +285,13 @@ uv run mypy --strict src
 uv run pytest -m "not integration" --cov=nomad_python_api --cov-fail-under=85
 uv run python scripts/check_snippet_coverage.py
 uv run mkdocs build --strict -f mkdocs.yml
-uv run mkdocs build --strict -f mkdocs.dev.yml
+uv run mkdocs build --strict -f mkdocs.public.yml
 uv run mkdocs build --strict -f mkdocs.internal.yml
 ```
 
 - **`ci.yml`.** Run the configured checks on PRs and pushes to `main` across supported Python versions. Keep the offline suite deterministic.
 - **`security.yml`.** Once approved, run `pip-audit` and CodeQL on PRs and weekly. Use Dependabot for dependency updates.
-- **Integration.** Once approved, run marked tests nightly or manually against the NOMAD test deployment or authorized local Oasis. Isolate credentials from untrusted jobs.
+- **Integration.** Run the approved read-only live suite against the NOMAD test deployment on trusted `develop` and `main` pushes and on manual dispatch from those branches. Keep credentials isolated from PR jobs. Additional integration targets, such as a local Oasis, require authorization.
 - **Deployment.** Branch from `develop` as `dev/<name>` and open a PR back to `develop`. After manual review, promote `develop` to `main` through a PR. The first scaffold commit is the only direct-commit exception on `main`. After CI passes on a push to `develop`, deploy user docs to GitHub Pages. After CI passes on a push to `main`, publish the wheel and sdist to PyPI via Trusted Publishing. Increase the package version before each promotion. Keep developer and internal docs out of the Pages artifact. See [Branches and deployment](docs/dev/deployment.md).
 
 ## Roadmap after the scaffold

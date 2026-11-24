@@ -1,3 +1,6 @@
 """Python SDK for core NOMAD operations."""
 
-__all__: list[str] = []
+from ._client import NomadClient
+from ._scopes import Scope
+
+__all__ = ["NomadClient", "Scope"]

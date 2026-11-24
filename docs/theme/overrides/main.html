@@ -1,0 +1,20 @@
+{% extends "base.html" %}
+
+{% block header %}
+  {{ super() }}
+  {% if config.extra.guide_switcher %}
+    {% set page_url = page.url if page else "" %}
+    {% set guide = "usage" if page_url.startswith("user/") else "developer" if page_url.startswith("dev/") else "" %}
+    <template id="nomad-guide-switcher-template">
+      <details class="nomad-guide-switcher">
+        <summary aria-label="Switch documentation guide">
+          {{ "Usage" if guide == "usage" else "Developer" if guide == "developer" else "Guides" }}
+        </summary>
+        <ul class="nomad-guide-switcher__menu">
+          <li><a href="{{ 'user/index.html' | url }}"{% if guide == "usage" %} aria-current="true"{% endif %}>Usage</a></li>
+          <li><a href="{{ 'dev/index.html' | url }}"{% if guide == "developer" %} aria-current="true"{% endif %}>Developer</a></li>
+        </ul>
+      </details>
+    </template>
+  {% endif %}
+{% endblock %}

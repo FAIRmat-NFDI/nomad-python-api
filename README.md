@@ -1,6 +1,6 @@
 # NOMAD Python API
 
-`nomad-python-api` is the Python SDK for core NOMAD data, app, and platform operations.
+`nomad-python-api` is the Python SDK for core NOMAD data, app, and platform operations. It primarily targets NOMAD Central and also supports Oasis deployments with compatible REST endpoints. Use the [Authentication guide](docs/user/identity/index.md) to connect and check your account.
 
 ## Install and import
 
@@ -27,7 +27,7 @@ python -m pip install -e ../nomad-python-api
 python -c "import nomad_python_api"
 ```
 
-The [Developer Guide](docs/dev/index.md) covers testing and the optional wheel build.
+The [Developer Guide](docs/dev/index.md) covers testing and the optional wheel build. See [Develop for NOMAD Oasis](docs/dev/oasis/index.md) to adapt the SDK for a deployment-specific API contract.
 
 ## Build the docs
 
@@ -35,10 +35,9 @@ Install [uv](https://docs.astral.sh/uv/getting-started/installation/) for local 
 
 ```sh
 uv sync --locked --python 3.12 --group docs
-uv run --no-sync mkdocs build --strict -f mkdocs.yml
-uv run --no-sync mkdocs build --strict -f mkdocs.dev.yml
+uv run --no-sync mkdocs serve
 ```
 
-Open `site/user/index.html` for the user guide and `site/dev/index.html` for the developer guide.
+Open <http://127.0.0.1:8000/> and use the selector beside the GitHub link to switch between Usage and Developer. Run `uv run --no-sync mkdocs build --strict` to build the combined site into `site/combined/`. The separate `mkdocs.public.yml` configuration builds the Usage guide for GitHub Pages at its `/nomad-python-api/` project path.
 
 Both guides use the shared NOMAD Material theme. See [Branches and deployment](docs/dev/deployment.md) for the review flow, GitHub Pages, and PyPI setup.

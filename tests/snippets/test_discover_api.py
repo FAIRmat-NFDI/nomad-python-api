@@ -5,21 +5,28 @@ import pytest
 
 @pytest.mark.snippet
 @pytest.mark.parametrize(
-    ("with_example", "expected_output"),
+    ("export_mode", "expected_output"),
     [
-        (False, "No public API entries.\n"),
-        (True, "example: An example export.\n"),
+        ("empty", "No public API entries.\n"),
+        ("example", "example: An example export.\n"),
+        (
+            "actual",
+            "NomadClient: Use a bearer credential to call a NOMAD deployment.\n"
+            "Scope: NOMAD permission names used by this SDK.\n",
+        ),
     ],
 )
 def test_discover_api(
     monkeypatch: pytest.MonkeyPatch,
     capsys: pytest.CaptureFixture[str],
-    with_example: bool,
+    export_mode: str,
     expected_output: str,
 ) -> None:
-    if with_example:
-        import nomad_python_api
+    import nomad_python_api
 
+    if export_mode == "empty":
+        monkeypatch.setattr(nomad_python_api, "__all__", [])
+    if export_mode == "example":
         example = ModuleType("example", "An example export.\n\nAdditional details.")
         monkeypatch.setattr(nomad_python_api, "example", example, raising=False)
         monkeypatch.setattr(nomad_python_api, "__all__", ["example"])

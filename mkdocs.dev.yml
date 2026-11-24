@@ -1,7 +1,0 @@
-INHERIT: mkdocs.theme.yml
-site_name: NOMAD Python API Developer Guide
-docs_dir: docs/dev
-site_dir: site/dev
-nav:
-  - Home: index.md
-  - Branches and deployment: deployment.md

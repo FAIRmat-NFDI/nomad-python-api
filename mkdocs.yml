@@ -1,7 +1,28 @@
 INHERIT: mkdocs.theme.yml
-site_name: NOMAD Python API User Guide
-site_url: https://fairmat-nfdi.github.io/nomad-python-api/
-docs_dir: docs/user
-site_dir: site/user
+site_name: NOMAD Python API
+docs_dir: docs
+site_dir: site/combined
+exclude_docs: |
+  /theme/
+  /internal/
+extra:
+  guide_switcher: true
+extra_css:
+  - stylesheets/extra.css
+  - stylesheets/guide-switcher.css
+extra_javascript:
+  - javascripts/guide-switcher.js
 nav:
   - Home: index.md
+  - Usage:
+      - Getting started: user/index.md
+      - Authentication: user/identity/index.md
+      - REST Reference:
+          - Authentication: user/identity/rest.md
+  - Developer:
+      - Develop the SDK: dev/index.md
+      - Develop for NOMAD Oasis: dev/oasis/index.md
+      - Architecture: dev/architecture/index.md
+      - Features:
+          - Identity: dev/identity/index.md
+      - Branches and deployment: dev/deployment.md

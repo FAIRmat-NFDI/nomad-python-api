@@ -1,0 +1,4 @@
+{
+  "endpoint": "prod",
+  "allowed_scopes": ["users:read"]
+}

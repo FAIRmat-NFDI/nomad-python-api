@@ -1,0 +1,36 @@
+.nomad-guide-switcher {
+  flex: none;
+  margin-inline: 0.3rem;
+  position: relative;
+  z-index: 2;
+}
+
+.nomad-guide-switcher summary {
+  cursor: pointer;
+  font-size: 0.75rem;
+  padding: 0.35rem 0.45rem;
+  white-space: nowrap;
+}
+
+.nomad-guide-switcher__menu {
+  background: var(--md-default-bg-color);
+  border-radius: 0.15rem;
+  box-shadow: var(--md-shadow-z2);
+  color: var(--md-default-fg-color);
+  inset-inline-end: 0;
+  list-style: none;
+  margin: 0;
+  min-width: 5rem;
+  padding: 0.2rem 0;
+  position: absolute;
+}
+
+.nomad-guide-switcher__menu a {
+  display: block;
+  font-size: 0.75rem;
+  padding: 0.35rem 0.6rem;
+}
+
+.nomad-guide-switcher__menu a:is(:hover, :focus-visible, [aria-current]) {
+  color: var(--md-accent-fg-color);
+}
