@@ -10,6 +10,7 @@ __all__ = [
     "HttpResponseError",
     "InvalidResponseError",
     "NomadError",
+    "PasswordAuthenticationError",
     "RateLimitError",
     "ReauthenticationRequiredError",
     "ScopeNotAllowedError",
@@ -41,6 +42,10 @@ class BrowserAuthenticationError(NomadError):
 
 class ReauthenticationRequiredError(BrowserAuthenticationError):
     """The caller must start a new interactive sign-in."""
+
+
+class PasswordAuthenticationError(NomadError):
+    """NOMAD password sign-in or token acquisition failed."""
 
 
 class HttpResponseError(NomadError):

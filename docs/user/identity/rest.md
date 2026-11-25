@@ -10,9 +10,9 @@ The contract below was checked against the [NOMAD Central API v1 schema](https:/
 
 | Request part | REST contract | SDK mapping |
 | --- | --- | --- |
-| Base URL | Defaults to `https://nomad-lab.eu/prod/v1/api/v1`. | Omit `endpoint` for NOMAD Central. For other deployments, pass the full HTTPS API v1 base URL to the client and credential. |
+| Base URL | Defaults to `https://nomad-lab.eu/prod/v1/api/v1`. | `NomadClient` uses the credential's endpoint. Set it on the credential for other deployments. |
 | Method and path | `GET /users/me` | `client.identity.me()` |
-| Authorization header | `Authorization: Bearer <access-token>` | Sent using `BearerTokenCredential` or `BrowserCredential` |
+| Authorization header | `Authorization: Bearer <access-token>` | Sent using the configured credential |
 | Required scope | `users:read` | `Scope.USERS_READ` |
 | Path parameters | None | None |
 | Query parameters | None | No `extra_query` |
@@ -67,3 +67,19 @@ The authorization and token URLs come from an explicit pair of endpoints or from
 | Refresh token | `POST {token_endpoint}` | Form includes `grant_type=refresh_token`, `client_id`, and `refresh_token`. A returned refresh token replaces the previous value. |
 
 Both token requests use `application/x-www-form-urlencoded`. The SDK requires `access_token`, `token_type=Bearer`, and a positive integer `expires_in` in successful responses. It keeps an optional `refresh_token` in memory. The access token goes to the selected NOMAD API as a bearer token. The OAuth `openid` scope starts sign-in, while NOMAD applies its own API permissions to the issued access token. [NOMAD authorization model](https://docs.nomad-lab.eu/explanation/auth.html#keycloak-access-tokens)
+
+## POST /auth/token { #password-login-rest }
+
+**SDK credential** · [`PasswordCredential`](index.md#password-login)
+
+This request uses the credential's NOMAD API base URL and sends an `application/x-www-form-urlencoded` body. The NOMAD deployment selects the Keycloak realm and client. [NOMAD production OpenAPI](https://nomad-lab.eu/prod/v1/api/v1/openapi.json) · [Upstream password handler](https://github.com/FAIRmat-NFDI/nomad/blob/0f19b93ffec1950e29b145fb008aad967ca9d530/nomad/app/v1/routers/auth.py#L344-L378)
+
+| Form field | REST contract | SDK mapping |
+| --- | --- | --- |
+| `grant_type` | Required string, `password` | Supplied by `PasswordCredential` |
+| `username` | Required string | `username` or `NOMAD_USERNAME` |
+| `password` | Required string | `password` or `NOMAD_PASSWORD` |
+| `scope` | Optional string, defaults to empty | The credential omits it. `allowed_scopes` is a separate local policy. |
+| `client_id`, `client_secret` | Optional strings in the form schema | The credential omits them. The upstream handler uses the deployment's Keycloak client settings. |
+
+The SDK requires a successful response to contain `access_token`, `token_type=Bearer`, and a positive integer `expires_in`. The response can also contain `id_token`, `refresh_token`, `scope`, and `refresh_expires_in`. The password credential uses the access token for API calls and repeats the password exchange for renewal. A rejected exchange raises `PasswordAuthenticationError` before any API operation is sent.

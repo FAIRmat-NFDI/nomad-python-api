@@ -1,6 +1,6 @@
 # Identity architecture
 
-`client.identity.me()` calls `GET /users/me` using a bearer token and returns an SDK-owned `Account`. The credential can supply an existing token or obtain one through browser sign-in. The [system architecture](../architecture/index.md) shows how this fits into NOMAD Central and self-hosted NOMAD Oasis. The [production OpenAPI schema](https://nomad-lab.eu/prod/v1/api/v1/openapi.json) defines the account route and response.
+`client.identity.me()` calls `GET /users/me` using a bearer token and returns an SDK-owned `Account`. The credential selects the deployment and can supply an existing token or obtain one through browser or password sign-in. The [system architecture](../architecture/index.md) shows how this fits into NOMAD Central and self-hosted NOMAD Oasis. The [production OpenAPI schema](https://nomad-lab.eu/prod/v1/api/v1/openapi.json) defines the account route and response.
 
 ## Classes and their responsibilities
 
@@ -29,6 +29,16 @@ classDiagram
         -in-memory session
         +authenticate()
     }
+    class PasswordCredential {
+        -deployment URL
+        -username and password
+        -in-memory session
+        +authenticate()
+    }
+    class TokenSession {
+        -cached token and expiry
+        -acquisition lock
+    }
     class Operation {
         +method
         +path
@@ -48,11 +58,14 @@ classDiagram
     IdentityOperations --> Operation : selects
     RequestPipeline --> BearerTokenCredential : asks for bearer token
     RequestPipeline --> BrowserCredential : asks for bearer token
+    RequestPipeline --> PasswordCredential : asks for bearer token
+    BrowserCredential *-- TokenSession : owns
+    PasswordCredential *-- TokenSession : owns
     Operation *-- OperationInfo : includes
     IdentityOperations ..> Account : returns
 ```
 
-The `me` operation declaration in `identity/_operations.py` supplies both the required scope used by the pipeline and the metadata returned by `get_operation_info("me")`. Both credential implementations check deployment binding before supplying a token. `identity/_account.py` holds the public result model.
+The `me` operation declaration in `identity/_operations.py` supplies both the required scope used by the pipeline and the metadata returned by `get_operation_info("me")`. The client initializes the pipeline with the credential's normalized API URL. Each credential still checks deployment binding before supplying a token. `identity/_account.py` holds the public result model.
 
 ## Request sequence
 
@@ -119,6 +132,30 @@ sequenceDiagram
 
 One lock per credential serializes discovery, sign-in, and refresh. The callback accepts only the configured path and loopback host header, validates state, checks `iss` when present, and closes at the end of each sign-in attempt. Discovery and token requests use a short-lived HTTP client with verified TLS and redirects disabled. The SDK bounds their JSON responses to 64 KiB. [Browser-login REST fields](../../user/identity/rest.md#browser-login-rest)
 
+## Password sign-in and renewal
+
+```mermaid
+sequenceDiagram
+    participant Pipeline as RequestPipeline
+    participant Credential as PasswordCredential
+    participant Session as Shared token session
+    participant NOMAD as Bound NOMAD deployment
+
+    Pipeline->>Credential: Get bearer token after local scope check
+    Credential->>Session: Read or renew token under lock
+    alt Token absent or near expiry
+        Session->>Credential: Obtain an access token
+        Credential->>NOMAD: POST /auth/token with password form
+        NOMAD-->>Credential: Token response or rejection
+        Credential-->>Session: Validated token or typed error
+    else Valid cached token
+        Session->>Session: Reuse access token
+    end
+    Session-->>Pipeline: Bearer token or typed error
+```
+
+`identity/_token.py` shares token response validation, bounded HTTP exchanges, and concurrent caching between the two sign-in credentials. Password renewal repeats the exchange against the same NOMAD endpoint. A rejected login clears the cached token and blocks automatic exchanges until explicit authentication. [Password-login REST fields](../../user/identity/rest.md#password-login-rest)
+
 ## Activity and lifecycle
 
 ```mermaid
@@ -145,7 +182,7 @@ stateDiagram-v2
     Closed --> [*]
 ```
 
-The state diagram describes the API client lifecycle. The browser credential keeps its session in memory and the bearer credential holds its supplied token. Both can be reused in another client for the same deployment after closing an API client. API sockets belong to each client's pool.
+The state diagram describes the API client lifecycle. The browser and password credentials keep their sessions in memory, and the bearer credential holds its supplied token. Each can be reused in another client on its bound deployment. API sockets belong to each client's pool.
 
 ## Timing and resource limits
 

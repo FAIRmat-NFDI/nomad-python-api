@@ -105,9 +105,7 @@ def test_json_setup(nomad_http, tmp_path, monkeypatch, scenario):
         allowed_scopes = None if scope_names is None else {Scope(name) for name in scope_names}
         credential = BearerTokenCredential(os.environ["NOMAD_PAT"], endpoint=endpoint)
 
-        with NomadClient(
-            endpoint=endpoint, credential=credential, allowed_scopes=allowed_scopes
-        ) as client:
+        with NomadClient(credential=credential, allowed_scopes=allowed_scopes) as client:
             account = client.identity.me()
         # --8<-- [end:json_setup]
         return account
@@ -161,7 +159,6 @@ def test_oasis_setup(nomad_http, monkeypatch, tmp_path, with_private_ca):
     endpoint = "https://oasis.example.org/nomad-oasis/api/v1"
     credential = BearerTokenCredential(os.environ["OASIS_PAT"], endpoint=endpoint)
     client = NomadClient(
-        endpoint=endpoint,
         credential=credential,
         ca_bundle=os.environ.get("NOMAD_CA_BUNDLE"),
     )
@@ -183,7 +180,6 @@ def test_oasis_setup(nomad_http, monkeypatch, tmp_path, with_private_ca):
 @pytest.mark.parametrize("scenario, expected", [
     ("success", ""),
     ("blocked_scope", "This client blocks"),
-    ("wrong_deployment", "Use a token configured"),
     ("401", "Check the token value"),
     ("403", "Check the token's NOMAD scopes"),
 ])
@@ -194,17 +190,15 @@ def test_error_recovery(nomad_http, scenario, expected, capsys):
     from nomad_python_api.identity import BearerTokenCredential
 
     credential = BearerTokenCredential(os.environ["NOMAD_PAT"], endpoint="prod")
-    endpoint = "https://nomad-lab.eu/prod/v1/test/api/v1" if scenario == "wrong_deployment" else "prod"
     allowed_scopes = set() if scenario == "blocked_scope" else None
     if scenario.isdigit():
         nomad_http.respond = lambda request: httpx.Response(int(scenario), text=_TOKEN)
 
-    with NomadClient(endpoint=endpoint, credential=credential, allowed_scopes=allowed_scopes) as client:
+    with NomadClient(credential=credential, allowed_scopes=allowed_scopes) as client:
         # --8<-- [start:error_recovery]
         from nomad_python_api.exceptions import (
             AuthorizationError,
             ClientAuthenticationError,
-            CredentialEndpointMismatchError,
             ScopeNotAllowedError,
         )
 
@@ -213,14 +207,12 @@ def test_error_recovery(nomad_http, scenario, expected, capsys):
         except ScopeNotAllowedError as error:
             missing = ", ".join(sorted(scope.value for scope in error.missing_scopes))
             print(f"This client blocks scopes required by {error.operation}: {missing}")
-        except CredentialEndpointMismatchError:
-            print("Use a token configured for this NOMAD deployment.")
         except ClientAuthenticationError:
             print("Check the token value, expiration, and issuing deployment.")
         except AuthorizationError:
             print("Check the token's NOMAD scopes and resource access.")
         # --8<-- [end:error_recovery]
-    assert len(nomad_http.requests) == (0 if scenario in {"blocked_scope", "wrong_deployment"} else 1)
+    assert len(nomad_http.requests) == (0 if scenario == "blocked_scope" else 1)
     output = capsys.readouterr().out
     assert output.startswith(expected)
     assert _TOKEN not in output

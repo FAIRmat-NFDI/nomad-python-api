@@ -2,13 +2,13 @@
 
 Use browser sign-in for an interactive script or local notebook. Use a personal access token (PAT) for unattended jobs and remote workers. To create a PAT for the account check, sign in to the deployment, open **User Settings → Tokens**, and grant `users:read`. Set `NOMAD_PAT` in your environment or have your secret manager supply it. [Create a PAT in NOMAD](https://docs.nomad-lab.eu/howto/manage/program/auth.html#create-a-pat)
 
-Omit `endpoint` on `NomadClient`, `BearerTokenCredential`, and `BrowserCredential` to use NOMAD Central. For a self-hosted NOMAD Oasis or a development or test deployment, pass its full HTTPS API v1 base URL as `endpoint` to both the client and credential.
+`NomadClient` gets its deployment from the credential. Omit `endpoint` on the credential to use NOMAD Central. For a self-hosted NOMAD Oasis or a development or test deployment, set `endpoint` on the credential to the full HTTPS API v1 base URL. If a previous example passed `endpoint` to `NomadClient`, move it to the credential.
 
 ## Check your account { #check-your-account }
 
 **REST endpoint used** · [`GET /users/me`](rest.md#get-users-me)
 
-`client.identity.me()` returns an `Account` with a user ID and an optional username. Creating the client and inspecting its scope policy require no network access. Each account lookup makes one NOMAD API request. A browser credential may first need to sign in or refresh its access token.
+`client.identity.me()` returns an `Account` with a user ID and an optional username. Creating the client and inspecting its scope policy require no network access. Each account lookup makes one NOMAD API request. A browser or password credential may first need to obtain a token.
 
 === "Named arguments"
 
@@ -73,6 +73,28 @@ The first allowed operation opens your system browser. Call `credential.authenti
 
 Run browser login where Python and the browser can reach the same loopback interface, including a local Jupyter kernel. Use a scoped PAT for a remote kernel, a headless pyiron worker, or CI.
 
+## Sign in with a username and password { #password-login }
+
+**REST endpoints used** · [`POST /auth/token`](rest.md#password-login-rest) · [`GET /users/me`](rest.md#get-users-me)
+
+Use `PasswordCredential` on a deployment that enables Keycloak Direct Access Grants. Supply both `username` and `password` as keyword arguments or set both `NOMAD_USERNAME` and `NOMAD_PASSWORD` in the process environment. Load real secrets from a secure prompt or secret manager. Use browser sign-in for institutional SSO and MFA. [Keycloak password grant](https://www.keycloak.org/securing-apps/oidc-layers#_resource_owner_password_credentials) · [OAuth security guidance](https://www.rfc-editor.org/rfc/rfc9700.html#section-2.4)
+
+=== "NOMAD Central"
+
+    ```python
+    --8<-- "tests/snippets/identity/test_password_login.py:central_password_login"
+    ```
+
+=== "Self-hosted NOMAD Oasis"
+
+    The Oasis uses its own configured Keycloak realm and client. Pass its API URL to the credential. This example reads the pair from the environment and passes both arguments explicitly.
+
+    ```python
+    --8<-- "tests/snippets/identity/test_password_login.py:oasis_password_login"
+    ```
+
+The first permitted API call exchanges the password for an access token. You can also sign in explicitly with `credential.authenticate()`. The credential reads the pair at construction and retains it in memory so it can repeat the exchange near expiry. `refresh_margin` controls when renewal begins and defaults to 30 seconds, capped at half the access token's lifetime. Create a new credential if the password changes. For an Oasis that uses a private CA, pass the PEM bundle to `PasswordCredential(ca_bundle=...)` for sign-in and `NomadClient(ca_bundle=...)` for API calls.
+
 ## Use an existing Keycloak access token
 
 If another application handles sign-in, supply its Keycloak **access token** the same way. Set `NOMAD_KEYCLOAK_ACCESS_TOKEN` in the process environment for this example. Replace the credential with a fresh access token when the old one expires.
@@ -114,9 +136,9 @@ Run this example inside your open client context.
 | Error | What to check |
 | --- | --- |
 | `ScopeNotAllowedError` | The client's local policy blocked the call before HTTP. Use a client configured for the required scope. |
-| `CredentialEndpointMismatchError` | The SDK blocked the call before HTTP because the credential and client target different deployments. |
 | `BrowserAuthenticationError` | Check the issuer, public client and redirect registration, browser availability, or sign-in timeout. |
 | `ReauthenticationRequiredError` | Call `credential.authenticate()` to start a fresh browser sign-in, then retry the operation. |
+| `PasswordAuthenticationError` | Check the username, password, and password-grant setting on the target deployment. After a rejection, call `credential.authenticate()` to try again, or create a new credential if the password changed. |
 | `ClientAuthenticationError` (401) | Check whether the token is complete, expired, revoked, or issued by a different deployment. |
 | `AuthorizationError` (403) | Check the token's scopes and the account's access to the resource. |
 | `RateLimitError` (429) | Wait before issuing another request. |

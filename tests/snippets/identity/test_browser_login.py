@@ -67,7 +67,7 @@ def test_oasis_browser_login(nomad_http, browser_sign_in):
     )
     credential.authenticate()
 
-    with NomadClient(endpoint=endpoint, credential=credential) as client:
+    with NomadClient(credential=credential) as client:
         account = client.identity.me()
     # --8<-- [end:oasis_browser_login]
 

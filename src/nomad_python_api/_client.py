@@ -6,7 +6,7 @@ from types import TracebackType
 
 from ._core._pipeline import RequestPipeline
 from ._scopes import Scope
-from .identity import BearerTokenCredential, BrowserCredential
+from .identity import BearerTokenCredential, BrowserCredential, PasswordCredential
 from .identity._operations import IdentityOperations
 
 
@@ -14,8 +14,7 @@ class NomadClient:
     """Use a bearer credential to call a NOMAD deployment.
 
     Args:
-        endpoint: The deployment alias or complete HTTPS API base URL. Defaults to Central.
-        credential: A bearer credential bound to that deployment.
+        credential: The credential whose bound API endpoint selects the deployment.
         allowed_scopes: Optional local limit on the operations the client attempts.
         ca_bundle: Optional PEM CA bundle for a deployment using a private CA.
     """
@@ -23,13 +22,12 @@ class NomadClient:
     def __init__(
         self,
         *,
-        endpoint: str = "prod",
-        credential: BearerTokenCredential | BrowserCredential,
+        credential: BearerTokenCredential | BrowserCredential | PasswordCredential,
         allowed_scopes: Iterable[Scope] | None = None,
         ca_bundle: str | PathLike[str] | None = None,
     ) -> None:
         self._pipeline = RequestPipeline(
-            endpoint=endpoint,
+            endpoint=credential._endpoint,
             credential=credential,
             allowed_scopes=allowed_scopes,
             ca_bundle=ca_bundle,

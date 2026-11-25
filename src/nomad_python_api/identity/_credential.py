@@ -13,6 +13,11 @@ def _is_token(value: object) -> bool:
     )
 
 
+def _require_endpoint(bound_endpoint: str, requested_endpoint: str) -> None:
+    if requested_endpoint != bound_endpoint:
+        raise CredentialEndpointMismatchError("The credential is bound to another NOMAD deployment.")
+
+
 class BearerTokenCredential:
     """Supply an existing PAT or Keycloak access token for one deployment.
 
@@ -29,8 +34,7 @@ class BearerTokenCredential:
 
     def _get_token(self, *, endpoint: str, scopes: frozenset[Scope]) -> str:
         """Supply the opaque token. NOMAD checks the requested permissions."""
-        if endpoint != self._endpoint:
-            raise CredentialEndpointMismatchError("The credential is bound to another NOMAD deployment.")
+        _require_endpoint(self._endpoint, endpoint)
         return self._token
 
     def __reduce_ex__(self, protocol: int) -> object:

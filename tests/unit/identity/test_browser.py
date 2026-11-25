@@ -15,7 +15,7 @@ from nomad_python_api.exceptions import (
     ReauthenticationRequiredError,
     ScopeNotAllowedError,
 )
-from nomad_python_api.identity import BearerTokenCredential, BrowserCredential, _browser
+from nomad_python_api.identity import BearerTokenCredential, BrowserCredential, _token
 
 ISSUER = "https://identity.example/realms/materials"
 AUTHORIZE = ISSUER + "/protocol/openid-connect/auth"
@@ -111,7 +111,7 @@ def test_discovered_oasis_endpoints_and_provider(nomad_http, browser_sign_in):
     )
     credential.authenticate()
     credential.authenticate()
-    with NomadClient(endpoint=OASIS, credential=credential) as client:
+    with NomadClient(credential=credential) as client:
         assert client.identity.me().user_id == "oasis-user"
     assert [str(item.url) for item in nomad_http.requests] == [
         DISCOVERY, TOKEN, TOKEN, OASIS + "/users/me",
@@ -160,9 +160,8 @@ def test_invalid_discovery_stops_sign_in(override, nomad_http, browser_sign_in):
 
 
 def test_scope_mismatch_and_closed_client_block_browser(nomad_http, browser_sign_in):
-    with NomadClient(credential=explicit(endpoint=OASIS)) as client:
-        with pytest.raises(CredentialEndpointMismatchError):
-            client.identity.me()
+    with pytest.raises(CredentialEndpointMismatchError):
+        explicit(endpoint=OASIS)._get_token(endpoint=CENTRAL, scopes=frozenset())
     with NomadClient(credential=explicit(), allowed_scopes=set()) as client:
         with pytest.raises(ScopeNotAllowedError):
             client.identity.me()
@@ -174,7 +173,7 @@ def test_scope_mismatch_and_closed_client_block_browser(nomad_http, browser_sign
 
 def test_refresh_rotation_and_expiry(nomad_http, browser_sign_in, monkeypatch):
     now = 100.0
-    monkeypatch.setattr(_browser, "monotonic", lambda: now)
+    monkeypatch.setattr(_token, "monotonic", lambda: now)
     responses = iter([token_response(), token_response("access-rotated", "refresh-rotated"),
                       token_response("access-next", None), httpx.Response(400, json={"error": "invalid_grant"})])
     nomad_http.respond = lambda request: next(responses)
@@ -205,7 +204,7 @@ def test_refresh_rotation_and_expiry(nomad_http, browser_sign_in, monkeypatch):
 
 def test_missing_refresh_token_requires_explicit_sign_in(nomad_http, browser_sign_in, monkeypatch):
     now = 100.0
-    monkeypatch.setattr(_browser, "monotonic", lambda: now)
+    monkeypatch.setattr(_token, "monotonic", lambda: now)
     nomad_http.respond = lambda request: token_response(refresh=None)
     credential = explicit()
     credential.authenticate()
@@ -221,7 +220,7 @@ def test_missing_refresh_token_requires_explicit_sign_in(nomad_http, browser_sig
 
 def test_concurrent_requests_share_login_and_refresh(nomad_http, browser_sign_in, monkeypatch):
     now = 100.0
-    monkeypatch.setattr(_browser, "monotonic", lambda: now)
+    monkeypatch.setattr(_token, "monotonic", lambda: now)
     responses = iter([token_response(), token_response("access-next")])
     nomad_http.respond = lambda request: next(responses)
     credential = explicit()
@@ -247,7 +246,7 @@ def test_refresh_transport_error_is_redacted_and_later_calls_can_recover(
     nomad_http, browser_sign_in, monkeypatch,
 ):
     now = 100.0
-    monkeypatch.setattr(_browser, "monotonic", lambda: now)
+    monkeypatch.setattr(_token, "monotonic", lambda: now)
 
     def respond(request):
         if len(nomad_http.requests) == 2:
