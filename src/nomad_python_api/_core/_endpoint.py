@@ -12,9 +12,10 @@ def normalize_endpoint(endpoint: str) -> str:
     if endpoint == "prod":
         return _PRODUCTION
     message = "Use 'prod' or a complete HTTPS NOMAD API base URL."
-    if any(character.isspace() or not character.isprintable() for character in endpoint):
-        raise ValueError(message)
-    if any(character in endpoint for character in ("?", "#", "\\")):
+    if any(
+        character in "?#\\" or character.isspace() or not character.isprintable()
+        for character in endpoint
+    ):
         raise ValueError(message)
     try:
         parsed = urlsplit(endpoint)
@@ -22,16 +23,15 @@ def normalize_endpoint(endpoint: str) -> str:
         url = httpx.URL(endpoint)
     except (ValueError, httpx.InvalidURL):
         raise ValueError(message) from None
+    path = parsed.path.rstrip("/")
     if (
         parsed.scheme != "https"
         or not parsed.hostname
-        or parsed.username is not None
-        or parsed.password is not None
-        or (port is not None and port < 1)
-        or not parsed.path.rstrip("/").endswith("/api/v1")
-        or ".." in parsed.path.split("/")
-        or "." in parsed.path.split("/")
-        or "%" in parsed.path
+        or "@" in parsed.netloc
+        or port == 0
+        or not path.endswith("/api/v1")
+        or {".", ".."}.intersection(path.split("/"))
+        or "%" in path
     ):
         raise ValueError(message)
     return str(url).rstrip("/")

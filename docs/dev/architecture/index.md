@@ -50,6 +50,23 @@ See [Identity architecture](../identity/index.md) for class relationships, call 
 
 ## Network and transfer design
 
+The default client owns its pool. A caller can also share a `NomadTransport` between independent NOMAD sessions or inject a trusted synchronous HTTPX client. Both modes borrow caller-owned resources. The pipeline still checks the credential's complete deployment URL and local scopes before attaching a bearer token. Close borrowing clients before closing their shared transport or HTTPX client. [Transport examples](../../user/identity/index.md#share-or-borrow-http-connections)
+
+```mermaid
+flowchart LR
+    subgraph Process["One worker process"]
+        ClientA["Client A with credential A"] --> SessionA["HTTP session A"]
+        ClientB["Client B with credential B"] --> SessionB["HTTP session B"]
+        SessionA --> Pool["Caller-owned NomadTransport pool"]
+        SessionB --> Pool
+    end
+    Pool --> Deployment["NOMAD deployment"]
+```
+
+Sharing `NomadTransport` keeps connection reuse below the HTTP session boundary. Each client builds its own request and retains its own cookies and per-phase timeouts. Injecting the same HTTPX client into several SDK clients shares session state as well as the pool. The application's hooks, proxy, and TLS configuration are part of the trust boundary. The SDK sets the operation URL and bearer header and disables redirect following when it dispatches. Hooks on a custom HTTPX client can alter the request, so only inject an application client you trust.
+
+For HPC, size the process-local pool and the number of active workers together. Eight workers with four connections each can open up to 32 connections. Monitor pool timeouts, throttling responses, bytes per second, and status-call latency before increasing parallelism. One coordinator can enforce a shared connection budget and fetch common inputs once for compute workers. A connection budget controls concurrent work. Rate controls can be enforced separately by the deployment or workflow. [Worker setup and scenarios](../../user/identity/index.md#configure-an-hpc-worker)
+
 The client passes [connection limits and phase timeouts](../../user/identity/api.md#connection-limits) into the shared request pipeline. A pool timeout occurs before sending the data request. Other transport failures can occur after NOMAD receives it. Keep these outcomes distinct so a caller can make the right recovery decision.
 
 Future uploads, downloads, and archive transfers share the pipeline's authentication and scope checks. Bulk data needs explicit streaming with bounded buffers and an overall deadline in addition to network inactivity timeouts. Reserve capacity for short status and metadata requests when transfers run concurrently. Use deployment-specific size limits for project planning and verify source identity before implementing download resume. Handle uncertain upload outcomes before offering replay.

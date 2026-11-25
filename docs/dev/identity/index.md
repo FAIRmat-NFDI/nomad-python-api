@@ -182,7 +182,7 @@ stateDiagram-v2
     Closed --> [*]
 ```
 
-The state diagram describes the API client lifecycle. The browser and password credentials keep their sessions in memory, and the bearer credential holds its supplied token. Each can be reused in another client on its bound deployment. API sockets belong to each client's pool.
+The state diagram describes the API client lifecycle. The browser and password credentials keep their sessions in memory, and the bearer credential holds its supplied token. Each can be reused in another client on its bound deployment. The default client owns its API pool. A client using an injected transport or HTTPX client leaves the borrowed pool open.
 
 ## Timing and resource limits
 

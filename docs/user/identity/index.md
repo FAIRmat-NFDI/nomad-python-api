@@ -49,11 +49,63 @@ Create a PAT with `users:read` in **User Settings → Tokens**, then set `NOMAD_
 
 ### Tune network settings { #tune-network-settings }
 
-Reuse one client per process. Set `pool_limits` and `timeouts` when a notebook or HPC job needs different connection limits or wait times. This example returns an account using the configured pool. [Client settings and defaults](api.md#connection-limits)
+Choose the simplest setup that meets your application's needs.
+
+| Situation | Use | What you control |
+| --- | --- | --- |
+| One script or notebook uses one credential | `NomadClient(credential=…)` | The SDK manages the pool and timeouts. Reuse the client across calls and close it when finished. |
+| One process needs a smaller connection budget or more time to receive data | `NomadClient(pool_limits=…, timeouts=…)` | The SDK owns a pool configured for your workload. |
+| Several clients in one process need a shared connection budget and separate sessions | `NomadClient(transport=…)` | Your application owns one pool. Each client keeps its own cookie jar, credential, scope policy, and API timeouts. |
+| Your application already has an approved HTTPX client for an institutional proxy or request tracing | `NomadClient(http_client=…)` | Your application owns the pool, TLS settings, timeouts, cookies, and hooks. |
+
+The example below returns one account using the configured pool. The connection count caps concurrent HTTP work on this client. The pool timeout controls how long a call waits for a connection. Read and write timeouts measure inactivity within their phases. A transfer that keeps making progress can exceed either timeout in total duration. [Client settings and defaults](api.md#connection-limits)
 
 ```python
 --8<-- "tests/snippets/identity/test_authentication.py:client_network_settings"
 ```
+
+### Share or borrow HTTP connections { #share-or-borrow-http-connections }
+
+Set `NOMAD_PAT` and, for the shared-pool example, `NOMAD_SECOND_PAT` to tokens with `users:read` on the same deployment. Each call returns the corresponding account.
+
+=== "Share a transport"
+
+    Use this when one process needs separate credentials or scope policies for different parts of a job. The example's two clients share a total of eight connections. Each client sends its own bearer token and keeps a separate cookie jar.
+
+    Put `pool_limits` and any private `ca_bundle` on `NomadTransport`. Put `timeouts` on each `NomadClient` if its calls need different wait times. Keep the outer transport open until both clients finish.
+
+    ```python
+    --8<-- "tests/snippets/identity/test_authentication.py:share_transport"
+    ```
+
+=== "Use an existing HTTPX client"
+
+    Use this when your application already configures its network through HTTPX. Set `NOMAD_HTTPS_PROXY` to your institution's approved proxy URL if you need one. The example connects to Central. For Oasis, pass the Oasis API URL as the credential's `endpoint`. Keep certificate verification enabled and review tracing hooks so they record timing and status without exposing credentials or research data.
+
+    Configure the pool, TLS trust, and timeouts on the HTTPX client. Multiple NOMAD clients borrowing the same HTTPX object also share its cookies and default headers. The NOMAD request pipeline supplies the bearer header and disables automatic redirects for its requests. Keep the HTTPX client open until all borrowers finish.
+
+    ```python
+    --8<-- "tests/snippets/identity/test_authentication.py:borrow_http_client"
+    ```
+
+### Configure an HPC worker { #configure-an-hpc-worker }
+
+Create the credential and client **inside each Slurm, pyiron, or multiprocessing worker after it starts**. Pass resource IDs and job inputs between processes. Supply the PAT through the site's secret mechanism and use the minimum scopes the job needs. For this account check, use a token with `users:read`. Set `NOMAD_API_URL` to the complete HTTPS API base URL for a self-hosted Oasis. Omit it to use NOMAD Central.
+
+```python
+--8<-- "tests/snippets/identity/test_authentication.py:hpc_worker"
+```
+
+A successful check returns the worker's account. In a real worker, keep subsequent NOMAD operations inside the same `with` block so they reuse the pool. The pool in this example allows up to two open connections.
+
+| HPC situation | How to use the client |
+| --- | --- |
+| **Four processes contact NOMAD directly** | Two connections per worker means up to eight across the job. Share a client among threads in each process. Set the number of active workers in the scheduler or workflow. |
+| **Compute workers all need the same input** | Let a coordinator fetch the input once and give workers the resulting file reference. This reduces duplicate requests and transfers. |
+| **Short status calls run alongside long transfers** | Keep capacity for status calls by limiting simultaneous transfers. If all connections are busy, a call can raise `PoolTimeoutError` before it reaches NOMAD. A worker can defer that call until capacity is available. |
+| **NOMAD returns `429`** | Handle `RateLimitError` in the application or workflow. The connection limit controls simultaneous connections. The deployment can impose a separate request-rate limit. |
+
+A shared transport works within one process. A job-wide concurrency budget belongs in the scheduler or coordinator. See the [API reference](api.md#nomad-transport) for ownership and configuration rules.
 
 ### Sign in with your browser { #browser-login }
 
@@ -75,7 +127,7 @@ Reuse one client per process. Set `pool_limits` and `timeouts` when a notebook o
     --8<-- "tests/snippets/identity/test_browser_login.py:oasis_browser_login"
     ```
 
-Run browser login where Python and the browser share a loopback interface, including a local Jupyter kernel. See [browser credential parameters](api.md#browser-credential-constructor) for discovery, timeout, callback, and CA settings.
+Run browser login where Python and the browser share a loopback interface, including a local Jupyter kernel. By default, the SDK lets the operating system pick a free callback port and handles token renewal as requests need it. Use the [advanced browser settings](api.md#advanced-browser-settings) if your Oasis administrator gives you a fixed callback URL.
 
 ### Sign in with a username and password { #password-login }
 

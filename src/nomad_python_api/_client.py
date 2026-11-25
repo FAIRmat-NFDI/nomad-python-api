@@ -3,13 +3,14 @@ from __future__ import annotations
 from collections.abc import Iterable
 from os import PathLike
 from types import TracebackType
+from httpx import Client as HttpClient
 
 from ._core._pipeline import RequestPipeline
+from ._core._transport import NomadTransport
 from ._network import ConnectionLimits, NetworkTimeouts
 from ._scopes import Scope
 from .identity import BearerTokenCredential, BrowserCredential, PasswordCredential
 from .identity._operations import IdentityOperations
-
 
 class NomadClient:
     """Use a bearer credential to call a NOMAD deployment.
@@ -20,6 +21,8 @@ class NomadClient:
         ca_bundle: Optional PEM CA bundle for a deployment using a private CA.
         pool_limits: Optional limits for the client's API connection pool.
         timeouts: Optional per-phase timeouts for the client's API requests.
+        transport: Optional caller-owned NOMAD connection pool.
+        http_client: Optional trusted, caller-owned synchronous HTTPX client.
     """
 
     def __init__(
@@ -30,6 +33,8 @@ class NomadClient:
         ca_bundle: str | PathLike[str] | None = None,
         pool_limits: ConnectionLimits | None = None,
         timeouts: NetworkTimeouts | None = None,
+        transport: NomadTransport | None = None,
+        http_client: HttpClient | None = None,
     ) -> None:
         self._pipeline = RequestPipeline(
             endpoint=credential._endpoint,
@@ -38,6 +43,8 @@ class NomadClient:
             ca_bundle=ca_bundle,
             pool_limits=pool_limits,
             timeouts=timeouts,
+            transport=transport,
+            http_client=http_client,
         )
         self._identity = IdentityOperations(self._pipeline)
 
@@ -52,7 +59,7 @@ class NomadClient:
         return self._pipeline.allowed_scopes
 
     def close(self) -> None:
-        """Close the client's HTTP connection pool."""
+        """Close the client and any HTTP connections it owns."""
         self._pipeline.close()
 
     def __enter__(self) -> NomadClient:

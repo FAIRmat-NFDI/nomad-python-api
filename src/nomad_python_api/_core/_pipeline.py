@@ -1,10 +1,10 @@
 import json
-import ssl
 from collections.abc import Iterable
 from os import PathLike
 from typing import Protocol
 
 import httpx
+from httpx import Client as _HTTPClient
 
 from .._network import ConnectionLimits, NetworkTimeouts
 from .._scopes import Scope
@@ -20,6 +20,7 @@ from ..exceptions import (
 )
 from ._endpoint import normalize_endpoint
 from ._operation import Operation
+from ._transport import NomadTransport, _BorrowedTransport, _httpx_limits, _tls
 
 _MAX_RESPONSE_BYTES = 256 * 1024
 _HTTP_ERRORS = {401: ClientAuthenticationError, 403: AuthorizationError, 429: RateLimitError}
@@ -41,6 +42,8 @@ class RequestPipeline:
         ca_bundle: str | PathLike[str] | None,
         pool_limits: ConnectionLimits | None,
         timeouts: NetworkTimeouts | None,
+        transport: NomadTransport | None,
+        http_client: _HTTPClient | None,
     ) -> None:
         self._endpoint = normalize_endpoint(endpoint)
         self._credential = credential
@@ -48,32 +51,48 @@ class RequestPipeline:
         if scopes is not None and any(not isinstance(scope, Scope) for scope in scopes):
             raise TypeError("allowed_scopes must contain Scope members.")
         self.allowed_scopes = None if scopes is None else frozenset(scopes)
-        if pool_limits is not None and not isinstance(pool_limits, ConnectionLimits):
-            raise TypeError("pool_limits must be a ConnectionLimits instance.")
+        self._closed = False
+        self._transport = transport
+        self._owns_http = http_client is None
+        if http_client is not None:
+            if not isinstance(http_client, _HTTPClient):
+                raise TypeError("http_client must be a synchronous httpx.Client.")
+            if any(option is not None for option in (transport, ca_bundle, pool_limits, timeouts)):
+                raise ValueError("http_client supplies transport, CA trust, pool limits, and timeouts.")
+            if http_client.is_closed:
+                raise ValueError("http_client is closed.")
+            self._http = http_client
+            return
+
         if timeouts is not None and not isinstance(timeouts, NetworkTimeouts):
             raise TypeError("timeouts must be a NetworkTimeouts instance.")
-        pool_limits = ConnectionLimits() if pool_limits is None else pool_limits
+        if transport is not None:
+            if not isinstance(transport, NomadTransport):
+                raise TypeError("transport must be a NomadTransport instance.")
+            if ca_bundle is not None or pool_limits is not None:
+                raise ValueError("Configure CA trust and pool limits on transport.")
+            if transport.is_closed:
+                raise ValueError("transport is closed.")
         timeouts = NetworkTimeouts() if timeouts is None else timeouts
-        verify = True if ca_bundle is None else ssl.create_default_context(cafile=str(ca_bundle))
+        network = (
+            {"transport": _BorrowedTransport(transport)}
+            if transport is not None
+            else {"verify": _tls(ca_bundle), "limits": _httpx_limits(pool_limits)}
+        )
         self._http = httpx.Client(
-            verify=verify,
             timeout=httpx.Timeout(
                 connect=timeouts.connect, pool=timeouts.pool, read=timeouts.read, write=timeouts.write,
             ),
-            limits=httpx.Limits(
-                max_connections=pool_limits.max_connections,
-                max_keepalive_connections=min(
-                    pool_limits.max_keepalive_connections, pool_limits.max_connections,
-                ),
-                keepalive_expiry=pool_limits.keepalive_expiry,
-            ),
             follow_redirects=False,
             trust_env=False,
+            **network,
         )
 
     def send(self, operation: Operation) -> object:
-        if self._http.is_closed:
+        if self._closed or self._http.is_closed:
             raise RuntimeError("The NOMAD client is closed.")
+        if self._transport is not None and self._transport.is_closed:
+            raise RuntimeError("The NOMAD transport is closed.")
         info = operation.info
         if self.allowed_scopes is not None:
             missing = info.required_scopes - self.allowed_scopes
@@ -81,10 +100,17 @@ class RequestPipeline:
                 raise ScopeNotAllowedError(info.name, missing)
         token = self._credential._get_token(endpoint=self._endpoint, scopes=info.required_scopes)
         try:
+            url = httpx.URL(self._endpoint + operation.path)
             with self._http.stream(
                 operation.method,
-                self._endpoint + operation.path,
-                headers={"Authorization": f"Bearer {token}", "Accept-Encoding": "identity"},
+                url,
+                auth=None,
+                follow_redirects=False,
+                headers={
+                    "Host": url.netloc.decode("ascii"),
+                    "Authorization": f"Bearer {token}",
+                    "Accept-Encoding": "identity",
+                },
             ) as response:
                 if response.status_code != 200:
                     error = _HTTP_ERRORS.get(response.status_code, HttpResponseError)
@@ -113,5 +139,8 @@ class RequestPipeline:
         raise failure
 
     def close(self) -> None:
-        """Close the underlying HTTP connection pool."""
-        self._http.close()
+        """Close the SDK session while leaving caller-owned resources open."""
+        if not self._closed:
+            self._closed = True
+            if self._owns_http:
+                self._http.close()
