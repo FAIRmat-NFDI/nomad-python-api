@@ -31,3 +31,18 @@ def nomad_http(monkeypatch: pytest.MonkeyPatch) -> MockNomad:
 
     monkeypatch.setattr(httpx, "Client", create_client)
     return nomad
+
+
+@pytest.fixture
+def browser_sign_in(monkeypatch: pytest.MonkeyPatch) -> list[str]:
+    from nomad_python_api.identity import _loopback
+
+    urls: list[str] = []
+
+    def authorize(make_url, *, port, path, state, issuer, timeout):
+        redirect_uri = f"http://127.0.0.1:{port or 54321}{path}"
+        urls.append(make_url(redirect_uri))
+        return "example-code", redirect_uri
+
+    monkeypatch.setattr(_loopback, "authorize", authorize)
+    return urls

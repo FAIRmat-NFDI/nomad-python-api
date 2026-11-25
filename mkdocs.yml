@@ -17,6 +17,8 @@ nav:
   - Usage:
       - Getting started: user/index.md
       - Authentication: user/identity/index.md
+      - API Reference:
+          - Authentication: user/identity/api.md
       - REST Reference:
           - Authentication: user/identity/rest.md
   - Developer:

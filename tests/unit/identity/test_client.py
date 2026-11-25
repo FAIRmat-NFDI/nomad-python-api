@@ -30,7 +30,7 @@ def test_scope_snapshot_and_metadata(nomad_http, monkeypatch):
     get_token = Mock(side_effect=AssertionError("unexpected credential access"))
     monkeypatch.setattr(credential, "_get_token", get_token)
     original_scopes = set()
-    with NomadClient(endpoint="prod", credential=credential, allowed_scopes=original_scopes) as client:
+    with NomadClient(credential=credential, allowed_scopes=original_scopes) as client:
         original_scopes.add(Scope.USERS_READ)
         assert client.allowed_scopes == frozenset()
         info = client.identity.get_operation_info("me")
@@ -48,8 +48,8 @@ def test_scope_snapshot_and_metadata(nomad_http, monkeypatch):
 
 
 def test_client_reuses_transport_and_closes_it(nomad_http):
-    credential = BearerTokenCredential(_TOKEN, endpoint="prod")
-    with NomadClient(endpoint=f"{_PROD}/", credential=credential) as client:
+    credential = BearerTokenCredential(_TOKEN, endpoint=f"{_PROD}/")
+    with NomadClient(credential=credential) as client:
         assert nomad_http.requests == []
         assert client.allowed_scopes is None
         assert client.identity.me() == Account("example-id", "demo")
@@ -68,9 +68,11 @@ def test_client_reuses_transport_and_closes_it(nomad_http):
 def test_untyped_scopes_and_unknown_keywords_fail_before_transport(nomad_http):
     credential = BearerTokenCredential(_TOKEN, endpoint="prod")
     with pytest.raises(TypeError, match="Scope members"):
-        NomadClient(endpoint="prod", credential=credential, allowed_scopes=[Scope.USERS_READ, "users:read"])
+        NomadClient(credential=credential, allowed_scopes=[Scope.USERS_READ, "users:read"])
     with pytest.raises(TypeError, match="allowed_scope"):
-        NomadClient(endpoint="prod", credential=credential, allowed_scope=set())
+        NomadClient(credential=credential, allowed_scope=set())
+    with pytest.raises(TypeError, match="endpoint"):
+        NomadClient(endpoint=_TEST, credential=credential)
     assert not nomad_http.clients
 
 
@@ -80,7 +82,7 @@ def test_client_uses_explicit_tls_and_safe_http_defaults(nomad_http, monkeypatch
     create_context = Mock(return_value=context)
     monkeypatch.setattr(ssl, "create_default_context", create_context)
     credential = BearerTokenCredential(_TOKEN, endpoint="prod")
-    client = NomadClient(endpoint="prod", credential=credential, ca_bundle=ca_bundle)
+    client = NomadClient(credential=credential, ca_bundle=ca_bundle)
     client.close()
     create_context.assert_called_once_with(cafile=str(ca_bundle))
     options = nomad_http.client_options[0]
@@ -92,10 +94,9 @@ def test_client_uses_explicit_tls_and_safe_http_defaults(nomad_http, monkeypatch
 
 
 def test_rejects_credential_on_same_host_different_deployment(nomad_http):
-    credential = BearerTokenCredential(_TOKEN, endpoint="prod")
-    with NomadClient(endpoint=_TEST, credential=credential) as client:
-        with pytest.raises(CredentialEndpointMismatchError):
-            client.identity.me()
+    credential = BearerTokenCredential(_TOKEN)
+    with pytest.raises(CredentialEndpointMismatchError):
+        credential._get_token(endpoint=_TEST, scopes=frozenset())
     assert nomad_http.requests == []
 
 
@@ -133,7 +134,7 @@ def test_http_errors_never_replay_or_leak_server_payload(nomad_http, caplog, sta
         status, text=_TOKEN, headers={"Location": "https://other.example.org/api/v1"}
     )
     credential = BearerTokenCredential(_TOKEN, endpoint="prod")
-    with NomadClient(endpoint="prod", credential=credential) as client:
+    with NomadClient(credential=credential) as client:
         with pytest.raises(error) as caught:
             client.identity.me()
     assert caught.value.status_code == status
@@ -153,7 +154,7 @@ def test_http_errors_never_replay_or_leak_server_payload(nomad_http, caplog, sta
 def test_invalid_account_response(nomad_http, content):
     nomad_http.respond = lambda request: httpx.Response(200, content=content)
     credential = BearerTokenCredential(_TOKEN, endpoint="prod")
-    with NomadClient(endpoint="prod", credential=credential) as client:
+    with NomadClient(credential=credential) as client:
         with pytest.raises(InvalidResponseError):
             client.identity.me()
     assert len(nomad_http.requests) == 1
@@ -168,7 +169,7 @@ def test_does_not_read_a_compressed_account_response(nomad_http):
         200, headers={"Content-Encoding": "gzip"}, stream=UnreadableBody()
     )
     credential = BearerTokenCredential(_TOKEN, endpoint="prod")
-    with NomadClient(endpoint="prod", credential=credential) as client:
+    with NomadClient(credential=credential) as client:
         with pytest.raises(InvalidResponseError, match="content encoding"):
             client.identity.me()
     assert nomad_http.requests[0].headers["accept-encoding"] == "identity"
@@ -180,7 +181,7 @@ def test_timeout_does_not_retry_or_expose_transport_error(nomad_http):
 
     nomad_http.respond = timeout
     credential = BearerTokenCredential(_TOKEN, endpoint="prod")
-    with NomadClient(endpoint="prod", credential=credential) as client:
+    with NomadClient(credential=credential) as client:
         with pytest.raises(TransportError, match="timeout") as caught:
             client.identity.me()
     assert caught.value.__context__ is None
@@ -190,7 +191,7 @@ def test_timeout_does_not_retry_or_expose_transport_error(nomad_http):
 
 def test_secret_objects_do_not_display_or_serialize_credentials(nomad_http):
     credential = BearerTokenCredential(_TOKEN, endpoint="prod")
-    with NomadClient(endpoint="prod", credential=credential) as client:
+    with NomadClient(credential=credential) as client:
         assert _TOKEN not in repr(credential) + repr(client)
         for value in (credential, client):
             with pytest.raises(TypeError, match="cannot be pickled"):

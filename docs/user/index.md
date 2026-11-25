@@ -1,6 +1,6 @@
 # Getting started
 
-The NOMAD Python API is the Python SDK for core NOMAD data, app, and platform operations. It primarily targets NOMAD Central and also supports Oasis deployments with compatible REST endpoints.
+The NOMAD Python API is the Python SDK for core NOMAD data, app, and platform operations. It defaults to NOMAD Central. For a self-hosted NOMAD Oasis or development deployment, configure its complete HTTPS API v1 base URL.
 
 ## Install and import
 
