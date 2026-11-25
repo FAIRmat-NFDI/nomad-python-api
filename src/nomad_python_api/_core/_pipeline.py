@@ -27,6 +27,20 @@ _MAX_RESPONSE_BYTES = 256 * 1024
 _HTTP_ERRORS = {401: ClientAuthenticationError, 403: AuthorizationError, 429: RateLimitError}
 
 
+def _status_error(operation: str, status_code: int) -> HttpResponseError:
+    return _HTTP_ERRORS.get(status_code, HttpResponseError)(operation, status_code)
+
+
+def _confirmed_status(error: httpx.HTTPStatusError, request: httpx.Request) -> int | None:
+    try:
+        if error.request is request and error.response.request is request:
+            return error.response.status_code
+    except RuntimeError:
+        # A hook can raise a status error without a request on its response.
+        pass
+    return None
+
+
 class _Credential(Protocol):
     def _get_token(self, *, endpoint: str, scopes: frozenset[Scope]) -> str: ...
 
@@ -103,8 +117,7 @@ class RequestPipeline:
         try:
             with closing(self._send_request(operation, token)) as response:
                 if response.status_code != 200:
-                    error = _HTTP_ERRORS.get(response.status_code, HttpResponseError)
-                    raise error(info.name, response.status_code)
+                    raise _status_error(info.name, response.status_code)
                 if response.headers.get("Content-Encoding", "identity").lower() != "identity":
                     raise InvalidResponseError(f"{info.name} returned an unsupported content encoding.")
                 content = bytearray()
@@ -130,6 +143,8 @@ class RequestPipeline:
 
     def _send_request(self, operation: Operation, token: str) -> httpx.Response:
         url = httpx.URL(self._endpoint + operation.path)
+        request = None
+        status_code = None
         try:
             request = self._http.build_request(
                 operation.method,
@@ -143,10 +158,14 @@ class RequestPipeline:
             # HTTPX merges client defaults into the query when building a request.
             request.url = url
             return self._http.send(request, stream=True, auth=None, follow_redirects=False)
-        except Exception:
+        except Exception as error:
             if self._owns_http:
                 raise
-            # Borrowed hooks can fail even after the server accepted the request.
+            if request is not None and isinstance(error, httpx.HTTPStatusError):
+                status_code = _confirmed_status(error, request)
+        if status_code is not None and status_code != 200:
+            raise _status_error(operation.info.name, status_code)
+        # A borrowed hook can fail even after NOMAD accepted the request.
         raise TransportError(
             f"{operation.info.name} failed in the borrowed HTTP client. "
             "The request may have reached NOMAD."

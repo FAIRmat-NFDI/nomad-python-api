@@ -235,18 +235,50 @@ def test_injected_http_client_keeps_ownership_and_nomad_request_rules():
     assert requests[0].headers["Authorization"] == f"Bearer {_TOKEN}"
 
 
+@pytest.mark.parametrize(("status", "sdk_error"), [
+    (302, HttpResponseError),
+    (401, ClientAuthenticationError),
+    (403, AuthorizationError),
+    (429, RateLimitError),
+    (503, HttpResponseError),
+])
+def test_response_hook_preserves_confirmed_nomad_error(status, sdk_error):
+    requests = []
+
+    def respond(request):
+        requests.append(request)
+        return httpx.Response(status, text=_TOKEN)
+
+    with httpx.Client(
+        transport=httpx.MockTransport(respond),
+        event_hooks={"response": [httpx.Response.raise_for_status]},
+    ) as external:
+        with NomadClient(credential=BearerTokenCredential(_TOKEN), http_client=external) as client:
+            with pytest.raises(sdk_error) as caught:
+                client.identity.me()
+
+    error = caught.value
+    assert type(error) is sdk_error
+    assert error.status_code == status
+    assert error.operation == "identity.me"
+    assert error.__context__ is None
+    assert error.__cause__ is None
+    assert _TOKEN not in str(error) + repr(error)
+    assert len(requests) == 1
+
+
 @pytest.mark.parametrize("hook_error", [RuntimeError, httpx.PoolTimeout, httpx.HTTPStatusError])
 def test_response_hook_failures_report_unknown_request_outcome(hook_error):
     requests = []
 
     def respond(request):
         requests.append(request)
-        status = 503 if hook_error is httpx.HTTPStatusError else 200
-        return httpx.Response(status)
+        return httpx.Response(200)
 
     def inspect_response(response):
         if hook_error is httpx.HTTPStatusError:
-            response.raise_for_status()
+            other_request = httpx.Request(response.request.method, response.request.url)
+            httpx.Response(429, request=other_request, text=_TOKEN).raise_for_status()
         raise hook_error(_TOKEN)
 
     with httpx.Client(

@@ -139,7 +139,7 @@ See the [worked network examples](index.md#share-or-borrow-http-connections). A 
 
 NOMAD sends the operation's query parameters and discards the borrowed client's default query parameters. Response hooks run before the SDK checks status, content encoding, and the 256 KiB JSON body limit. Keep hooks focused on response metadata. A hook that reads or decodes the response may buffer the body before the SDK can enforce its limit.
 
-A dispatch or hook failure from a borrowed client raises `TransportError`. The request may already have reached NOMAD. The SDK reserves `PoolTimeoutError` for connection waits it can classify as unsent.
+If a response hook calls `raise_for_status()` on the original NOMAD response, the SDK raises the corresponding HTTP exception, such as `AuthorizationError` for HTTP `403` or `RateLimitError` for HTTP `429`. A status error for a separate request made by the hook, or another dispatch or hook failure, raises `TransportError`. In those cases the original request may already have reached NOMAD. The SDK reserves `PoolTimeoutError` for connection waits it can classify as unsent.
 
 ## BearerTokenCredential class { #bearer-token-credential }
 
