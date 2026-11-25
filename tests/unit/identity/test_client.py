@@ -2,18 +2,23 @@
 
 import pickle
 import ssl
+from concurrent.futures import ThreadPoolExecutor
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+from threading import Event, Thread
 from unittest.mock import Mock
 
 import httpx
 import pytest
 
-from nomad_python_api import NomadClient, Scope
+from nomad_python_api import ConnectionLimits, NetworkTimeouts, NomadClient, Scope
+from nomad_python_api._core import _pipeline
 from nomad_python_api.exceptions import (
     AuthorizationError,
     ClientAuthenticationError,
     CredentialEndpointMismatchError,
     HttpResponseError,
     InvalidResponseError,
+    PoolTimeoutError,
     RateLimitError,
     ScopeNotAllowedError,
     TransportError,
@@ -89,8 +94,100 @@ def test_client_uses_explicit_tls_and_safe_http_defaults(nomad_http, monkeypatch
     assert options["verify"] is context
     assert options["follow_redirects"] is False
     assert options["trust_env"] is False
-    assert all(value > 0 for value in options["timeout"].as_dict().values())
+    assert options["timeout"] == httpx.Timeout(connect=5, pool=10, read=10, write=10)
+    assert options["limits"] == httpx.Limits(
+        max_connections=10, max_keepalive_connections=5, keepalive_expiry=5,
+    )
     assert nomad_http.clients[0].is_closed
+
+
+def test_client_uses_explicit_pool_limits_and_timeouts(nomad_http):
+    credential = BearerTokenCredential(_TOKEN)
+    limits = ConnectionLimits(max_connections=2, max_keepalive_connections=3, keepalive_expiry=0)
+    timeouts = NetworkTimeouts(**{"connect": 1, "pool": 2, "read": 3, "write": 4})
+    with NomadClient(credential=credential, pool_limits=limits, timeouts=timeouts) as client:
+        assert client.identity.me().user_id == "example-id"
+
+    options = nomad_http.client_options[0]
+    assert options["timeout"] == httpx.Timeout(connect=1, pool=2, read=3, write=4)
+    assert options["limits"] == httpx.Limits(
+        max_connections=2, max_keepalive_connections=2, keepalive_expiry=0,
+    )
+
+
+@pytest.mark.parametrize(("settings", "field", "value"), [
+    (ConnectionLimits, "max_connections", 0),
+    (ConnectionLimits, "max_connections", True),
+    (ConnectionLimits, "max_keepalive_connections", -1),
+    (ConnectionLimits, "max_keepalive_connections", 2.5),
+    (ConnectionLimits, "keepalive_expiry", float("inf")),
+    (NetworkTimeouts, "connect", float("nan")),
+    (NetworkTimeouts, "pool", 0),
+    (NetworkTimeouts, "read", "10"),
+    (NetworkTimeouts, "write", -1),
+])
+def test_invalid_network_settings(settings, field, value):
+    with pytest.raises(ValueError, match=field):
+        settings(**{field: value})
+
+
+def test_invalid_network_setting_types_fail_before_transport(nomad_http):
+    credential = BearerTokenCredential(_TOKEN)
+    with pytest.raises(TypeError, match="ConnectionLimits"):
+        NomadClient(credential=credential, pool_limits={})
+    with pytest.raises(TypeError, match="NetworkTimeouts"):
+        NomadClient(credential=credential, timeouts={})
+    assert not nomad_http.clients
+
+
+def test_saturated_pool_times_out_before_sending_a_request(monkeypatch):
+    request_started = Event()
+    release_request = Event()
+    received_paths = []
+    body = b'{"user_id":"example-id"}'
+
+    class AccountHandler(BaseHTTPRequestHandler):
+        def do_GET(self):
+            received_paths.append(self.path)
+            request_started.set()
+            if not release_request.wait(timeout=10):
+                self.send_error(503)
+                return
+            self.send_response(200)
+            self.send_header("Content-Length", str(len(body)))
+            self.end_headers()
+            self.wfile.write(body)
+
+    with ThreadingHTTPServer(("127.0.0.1", 0), AccountHandler) as server:
+        # Exercise real HTTPX pooling against plaintext loopback using a test-only token.
+        endpoint = f"http://127.0.0.1:{server.server_port}/api/v1"
+        credential = BearerTokenCredential(_TOKEN)
+        monkeypatch.setattr(credential, "_endpoint", endpoint)
+        monkeypatch.setattr(_pipeline, "normalize_endpoint", lambda _: endpoint)
+        thread = Thread(target=server.serve_forever, kwargs={"poll_interval": 0.05})
+        thread.start()
+        try:
+            with NomadClient(
+                credential=credential,
+                pool_limits=ConnectionLimits(max_connections=1),
+                timeouts=NetworkTimeouts(pool=0.25),
+            ) as client, ThreadPoolExecutor(max_workers=1) as executor:
+                first = executor.submit(client.identity.me)
+                try:
+                    assert request_started.wait(timeout=5)
+                    with pytest.raises(PoolTimeoutError, match="before sending") as caught:
+                        client.identity.me()
+                    assert isinstance(caught.value, TransportError)
+                    assert caught.value.__context__ is None
+                    assert received_paths == ["/api/v1/users/me"]
+                finally:
+                    release_request.set()
+                assert first.result(timeout=5).user_id == "example-id"
+                assert client.identity.me().user_id == "example-id"
+                assert received_paths == ["/api/v1/users/me"] * 2
+        finally:
+            server.shutdown()
+            thread.join()
 
 
 def test_rejects_credential_on_same_host_different_deployment(nomad_http):

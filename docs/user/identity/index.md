@@ -47,6 +47,14 @@ Create a PAT with `users:read` in **User Settings → Tokens**, then set `NOMAD_
     --8<-- "tests/snippets/identity/test_authentication.py:json_setup"
     ```
 
+### Tune network settings { #tune-network-settings }
+
+Reuse one client per process. Set `pool_limits` and `timeouts` when a notebook or HPC job needs different connection limits or wait times. This example returns an account using the configured pool. [Client settings and defaults](api.md#connection-limits)
+
+```python
+--8<-- "tests/snippets/identity/test_authentication.py:client_network_settings"
+```
+
 ### Sign in with your browser { #browser-login }
 
 **REST endpoints used** · [OIDC discovery, authorization, and token exchange](rest.md#browser-login-rest) · [`GET /users/me`](rest.md#get-users-me)

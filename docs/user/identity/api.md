@@ -7,6 +7,7 @@ This reference lists the SDK classes, instance methods, read-only properties, mo
 | Type | Kind | Purpose |
 | --- | --- | --- |
 | [`NomadClient`](#nomad-client) | Class | Runs operations against the credential's deployment. |
+| [`ConnectionLimits`](#connection-limits) and [`NetworkTimeouts`](#network-timeouts) | Frozen data classes | Configure connections and phase timeouts for API requests. |
 | [`BearerTokenCredential`](#bearer-token-credential) | Class | Supplies an existing PAT or Keycloak access token. |
 | [`BrowserCredential`](#browser-credential) | Class | Signs in through the system browser and manages the token session. |
 | [`PasswordCredential`](#password-credential) | Class | Signs in using the deployment's password grant. |
@@ -26,6 +27,8 @@ NomadClient(
     credential: BearerTokenCredential | BrowserCredential | PasswordCredential,
     allowed_scopes: Iterable[Scope] | None = None,
     ca_bundle: str | PathLike[str] | None = None,
+    pool_limits: ConnectionLimits | None = None,
+    timeouts: NetworkTimeouts | None = None,
 )
 ```
 
@@ -34,6 +37,8 @@ NomadClient(
 | `credential` | `BearerTokenCredential`, `BrowserCredential`, or `PasswordCredential` | Yes | — | Supplies the access token and selects the deployment. |
 | `allowed_scopes` | `Iterable[Scope]` or `None` | No | `None` | Local policy. The client takes an immutable snapshot of the supplied scopes. |
 | `ca_bundle` | `str`, `PathLike[str]`, or `None` | No | `None` | Path to a trusted PEM CA bundle for API calls. With `None`, HTTPX uses its default trust bundle. |
+| `pool_limits` | [`ConnectionLimits`](#connection-limits) or `None` | No | `None` | Connection limits for this client. `None` uses the settings class defaults. |
+| `timeouts` | [`NetworkTimeouts`](#network-timeouts) or `None` | No | `None` | Per-phase timeouts for API calls. `None` uses the settings class defaults. |
 
 ### Properties
 
@@ -61,6 +66,39 @@ Set `OASIS_PAT` to a token with `users:read` and replace the example URL with yo
 ```
 
 On success, `account` contains your Oasis account. The `finally` block closes the client's connections even if the lookup raises an exception.
+
+### Worked example for connection limits and timeouts
+
+Set `NOMAD_PAT` to a token with `users:read`. This client allows four connections, holds up to two idle connections, and waits up to three seconds for a free connection. A successful request returns an `Account`.
+
+```python
+--8<-- "tests/snippets/identity/test_authentication.py:client_network_settings"
+```
+
+Create and reuse a client within each HPC worker process. Four workers running this example have independent pools and can use up to 16 connections in total.
+
+## ConnectionLimits data class { #connection-limits }
+
+Import from `nomad_python_api`. All fields are optional keyword arguments and read-only after construction. The pool limits apply to each client.
+
+| Field | Type | Default | Description |
+| --- | --- | --- | --- |
+| `max_connections` | `int` | `10` | Positive maximum number of connections in the pool. |
+| `max_keepalive_connections` | `int` | `5` | Maximum idle connections to retain, up to `max_connections`. Use zero to close idle connections. |
+| `keepalive_expiry` | `float` | `5.0` | Finite number of seconds before an idle connection expires. Use zero to expire idle connections immediately. |
+
+## NetworkTimeouts data class { #network-timeouts }
+
+Import from `nomad_python_api`. All fields are optional keyword arguments and read-only after construction. Give each timeout a finite, positive value in seconds.
+
+| Field | Type | Default | Description |
+| --- | --- | --- | --- |
+| `connect` | `float` | `5.0` | Maximum wait to establish a connection. |
+| `pool` | `float` | `10.0` | Maximum wait to acquire a connection. Failure raises `PoolTimeoutError`. |
+| `read` | `float` | `10.0` | Maximum wait for incoming data during a network read. |
+| `write` | `float` | `10.0` | Maximum wait to send a chunk during a network write. |
+
+These limits apply to individual phases of the API request. Credentials use their own connection and sign-in settings.
 
 ## BearerTokenCredential class { #bearer-token-credential }
 
@@ -268,6 +306,7 @@ Import these exception classes from `nomad_python_api.exceptions`. Catch `NomadE
 | `AuthorizationError` | `HttpResponseError` | NOMAD returned HTTP 403. Check token scopes and account access. |
 | `RateLimitError` | `HttpResponseError` | NOMAD returned HTTP 429. Wait before trying again. |
 | `TransportError` | `NomadError` | The API transport failed or timed out. Check connectivity and certificate trust. |
+| `PoolTimeoutError` | `TransportError` | The data request timed out before it acquired a connection. Review client concurrency and the pool wait budget. |
 | `InvalidResponseError` | `NomadError` | The API response could not be interpreted as the expected account. |
 
 ### Worked example: handle scope and authentication errors

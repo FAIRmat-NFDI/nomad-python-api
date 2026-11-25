@@ -44,6 +44,29 @@ def test_named_setup(nomad_http):
     assert_account_request(nomad_http)
 
 
+def test_configure_client_network_settings(nomad_http):
+    # --8<-- [start:client_network_settings]
+    import os
+
+    from nomad_python_api import ConnectionLimits, NetworkTimeouts, NomadClient
+    from nomad_python_api.identity import BearerTokenCredential
+
+    credential = BearerTokenCredential(os.environ["NOMAD_PAT"])
+    with NomadClient(
+        credential=credential,
+        pool_limits=ConnectionLimits(max_connections=4, max_keepalive_connections=2),
+        timeouts=NetworkTimeouts(pool=3, read=20),
+    ) as client:
+        account = client.identity.me()
+    # --8<-- [end:client_network_settings]
+
+    assert account.user_id == "example-id"
+    assert_account_request(nomad_http)
+    options = nomad_http.client_options[0]
+    assert options["limits"] == httpx.Limits(max_connections=4, max_keepalive_connections=2)
+    assert options["timeout"].as_dict() == {"connect": 5, "pool": 3, "read": 20, "write": 10}
+
+
 def test_dictionary_setup_and_local_discovery(nomad_http):
     # --8<-- [start:dictionary_setup]
     import os

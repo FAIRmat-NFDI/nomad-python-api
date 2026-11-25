@@ -10,6 +10,7 @@ flowchart LR
         Caller["Python, Jupyter, or pyiron worker"] --> Client["NomadClient"]
         Secret["Job or environment secret"] --> Credential["Deployment-bound bearer credential"]
         Credential --> Client
+        Settings["Connection limits and phase timeouts"] --> Client
         Client --> Group["Identity operation group"]
         Group --> Pipeline["Shared request pipeline"]
         Pipeline --> Pool["Client-owned HTTPS pool"]
@@ -27,6 +28,7 @@ The client application and the chosen deployment are separate trust boundaries. 
 | Location | Responsibility |
 | --- | --- |
 | `nomad_python_api/_client.py` | Public constructor, feature group properties, and connection-pool lifecycle. |
+| `nomad_python_api/_network.py` | SDK-owned immutable connection limits and network timeout settings. |
 | `nomad_python_api/identity/` | Bearer credential, identity operations, account model, and public identity exports. |
 | `nomad_python_api/_core/` | Deployment URL validation, shared operation records, local scope policy, and HTTP response handling. |
 | `nomad_python_api/_scopes.py` and `exceptions.py` | Shared scope names and the exception types callers use across features. |
@@ -45,3 +47,9 @@ The public client wires feature groups to the shared pipeline. A feature declare
 | **Extension fields** | Add explicit per-operation mappings for a supported query, JSON, or multipart location. Keep destination, authentication, and required scopes under SDK control. |
 
 See [Identity architecture](../identity/index.md) for class relationships, call flow, state, and data. See [Develop for NOMAD Oasis](../oasis/index.md) to onboard a fork.
+
+## Network and transfer design
+
+The client passes [connection limits and phase timeouts](../../user/identity/api.md#connection-limits) into the shared request pipeline. A pool timeout occurs before sending the data request. Other transport failures can occur after NOMAD receives it. Keep these outcomes distinct so a caller can make the right recovery decision.
+
+Future uploads, downloads, and archive transfers share the pipeline's authentication and scope checks. Bulk data needs explicit streaming with bounded buffers and an overall deadline in addition to network inactivity timeouts. Reserve capacity for short status and metadata requests when transfers run concurrently. Use deployment-specific size limits for project planning and verify source identity before implementing download resume. Handle uncertain upload outcomes before offering replay.

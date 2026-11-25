@@ -5,6 +5,7 @@ from os import PathLike
 from types import TracebackType
 
 from ._core._pipeline import RequestPipeline
+from ._network import ConnectionLimits, NetworkTimeouts
 from ._scopes import Scope
 from .identity import BearerTokenCredential, BrowserCredential, PasswordCredential
 from .identity._operations import IdentityOperations
@@ -17,6 +18,8 @@ class NomadClient:
         credential: The credential whose bound API endpoint selects the deployment.
         allowed_scopes: Optional local limit on the operations the client attempts.
         ca_bundle: Optional PEM CA bundle for a deployment using a private CA.
+        pool_limits: Optional limits for the client's API connection pool.
+        timeouts: Optional per-phase timeouts for the client's API requests.
     """
 
     def __init__(
@@ -25,12 +28,16 @@ class NomadClient:
         credential: BearerTokenCredential | BrowserCredential | PasswordCredential,
         allowed_scopes: Iterable[Scope] | None = None,
         ca_bundle: str | PathLike[str] | None = None,
+        pool_limits: ConnectionLimits | None = None,
+        timeouts: NetworkTimeouts | None = None,
     ) -> None:
         self._pipeline = RequestPipeline(
             endpoint=credential._endpoint,
             credential=credential,
             allowed_scopes=allowed_scopes,
             ca_bundle=ca_bundle,
+            pool_limits=pool_limits,
+            timeouts=timeouts,
         )
         self._identity = IdentityOperations(self._pipeline)
 
