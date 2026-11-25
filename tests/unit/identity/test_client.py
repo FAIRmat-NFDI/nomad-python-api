@@ -5,7 +5,7 @@ import ssl
 from concurrent.futures import ThreadPoolExecutor
 from contextlib import ExitStack
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
-from threading import Event, Thread
+from threading import TIMEOUT_MAX, Event, Thread
 from unittest.mock import Mock
 
 import httpx
@@ -124,6 +124,7 @@ def test_client_uses_explicit_pool_limits_and_timeouts(nomad_http):
     (ConnectionLimits, "keepalive_expiry", float("inf")),
     (NetworkTimeouts, "connect", float("nan")),
     (NetworkTimeouts, "pool", 0),
+    (NetworkTimeouts, "pool", TIMEOUT_MAX * 2),
     (NetworkTimeouts, "read", "10"),
     (NetworkTimeouts, "write", -1),
 ])
@@ -217,6 +218,7 @@ def test_injected_http_client_keeps_ownership_and_nomad_request_rules():
         transport=httpx.MockTransport(respond),
         auth=("wrong-user", "wrong-password"),
         headers={"Host": "other.example"},
+        params={"page_size": 20},
         follow_redirects=True,
     ) as external:
         with NomadClient(credential=credential, http_client=external) as client:
@@ -228,8 +230,37 @@ def test_injected_http_client_keeps_ownership_and_nomad_request_rules():
             client.identity.me()
 
     assert len(requests) == 1
+    assert str(requests[0].url) == f"{_PROD}/users/me"
     assert requests[0].headers["Host"] == "nomad-lab.eu"
     assert requests[0].headers["Authorization"] == f"Bearer {_TOKEN}"
+
+
+@pytest.mark.parametrize("hook_error", [RuntimeError, httpx.PoolTimeout, httpx.HTTPStatusError])
+def test_response_hook_failures_report_unknown_request_outcome(hook_error):
+    requests = []
+
+    def respond(request):
+        requests.append(request)
+        status = 503 if hook_error is httpx.HTTPStatusError else 200
+        return httpx.Response(status)
+
+    def inspect_response(response):
+        if hook_error is httpx.HTTPStatusError:
+            response.raise_for_status()
+        raise hook_error(_TOKEN)
+
+    with httpx.Client(
+        transport=httpx.MockTransport(respond),
+        event_hooks={"response": [inspect_response]},
+    ) as external:
+        with NomadClient(credential=BearerTokenCredential(_TOKEN), http_client=external) as client:
+            with pytest.raises(TransportError, match="may have reached NOMAD") as caught:
+                client.identity.me()
+
+    assert type(caught.value) is TransportError
+    assert caught.value.__context__ is None
+    assert _TOKEN not in str(caught.value)
+    assert len(requests) == 1
 
 
 def test_injected_transport_options_fail_before_a_request():

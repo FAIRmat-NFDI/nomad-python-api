@@ -2,6 +2,7 @@
 
 from dataclasses import dataclass, fields
 from sys import float_info
+from threading import TIMEOUT_MAX
 
 
 @dataclass(frozen=True, kw_only=True)
@@ -31,7 +32,10 @@ class NetworkTimeouts:
 
     def __post_init__(self) -> None:
         for setting in fields(self):
-            _validate_seconds(setting.name, getattr(self, setting.name))
+            value = getattr(self, setting.name)
+            _validate_seconds(setting.name, value)
+            if value > TIMEOUT_MAX:
+                raise ValueError(f"{setting.name} must not exceed the runtime timeout limit ({TIMEOUT_MAX:g} s).")
 
 
 def _validate_seconds(name: str, value: float, *, allow_zero: bool = False) -> None:

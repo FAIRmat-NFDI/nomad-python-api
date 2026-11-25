@@ -42,10 +42,12 @@ NomadClient(
 | `ca_bundle` | `str`, `PathLike[str]`, or `None` | No | `None` | Path to a trusted PEM CA bundle for API calls. With `None`, HTTPX uses its default trust bundle. |
 | `pool_limits` | [`ConnectionLimits`](#connection-limits) or `None` | No | `None` | Connection limits for this client. `None` uses the settings class defaults. |
 | `timeouts` | [`NetworkTimeouts`](#network-timeouts) or `None` | No | `None` | Per-phase timeouts for API calls. `None` uses the settings class defaults. |
-| `transport` | [`NomadTransport`](#nomad-transport) or `None` | No | `None` | Caller-owned connection pool. Set `pool_limits` and `ca_bundle` on the transport. Set `timeouts` on each client as needed. |
-| `http_client` | Synchronous `httpx.Client` or `None` | No | `None` | Trusted, caller-owned HTTPX client. Configure its network settings when you create it. Combining it with `transport`, `pool_limits`, `ca_bundle`, or `timeouts` raises `ValueError`. |
+| `transport` | [`NomadTransport`](#nomad-transport) or `None` | No | `None` | **Advanced.** Caller-owned connection pool. Set `pool_limits` and `ca_bundle` on the transport. Set `timeouts` on each client as needed. |
+| `http_client` | Synchronous `httpx.Client` or `None` | No | `None` | **Advanced.** Trusted, caller-owned HTTPX client. Configure its network settings when you create it. Combining it with `transport`, `pool_limits`, `ca_bundle`, or `timeouts` raises `ValueError`. |
 
 #### Connection ownership and configuration
+
+Start with the default client. Choose a borrowed connection setup when the [advanced use cases](index.md#share-or-borrow-http-connections) apply.
 
 | Mode | Configure pool and CA trust on | Configure API timeouts on | Close the pool with |
 | --- | --- | --- | --- |
@@ -109,13 +111,17 @@ Import from `nomad_python_api`. All fields are optional keyword arguments and re
 | Field | Type | Default | Description |
 | --- | --- | --- | --- |
 | `connect` | `float` | `5.0` | Maximum wait to establish a connection. |
-| `pool` | `float` | `10.0` | Maximum wait to acquire a connection. Failure raises `PoolTimeoutError`. |
+| `pool` | `float` | `10.0` | Maximum wait to acquire a connection in an SDK-managed HTTP session. Failure raises `PoolTimeoutError`. |
 | `read` | `float` | `10.0` | Maximum wait for incoming data during a network read. |
 | `write` | `float` | `10.0` | Maximum wait to send a chunk during a network write. |
 
-These limits apply to individual phases of the API request. Credentials use their own connection and sign-in settings.
+These limits apply to individual phases of the API request. Values above Python's platform-specific `threading.TIMEOUT_MAX` raise `ValueError` during construction. Credentials use their own connection and sign-in settings.
 
 ## NomadTransport class { #nomad-transport }
+
+!!! info "Advanced · Optional"
+
+    Use this separate object when several sessions in one process need the same connection budget. For one client, [configure the SDK-owned pool directly](index.md#tune-network-settings).
 
 Import from `nomad_python_api`. Use a context manager or call `close()` after all borrowing clients finish. The pool is shared within a process. Each borrowing client keeps its own HTTP session, cookies, credential, and scope policy.
 
@@ -130,6 +136,10 @@ Import from `nomad_python_api`. Use a context manager or call `close()` after al
 | `close()` | Instance method | `None` | Closes the shared pool. Call after its borrowing clients finish. Repeated calls are safe. |
 
 See the [worked network examples](index.md#share-or-borrow-http-connections). A custom HTTP client can share cookies and other session settings across callers. Use a trusted HTTPX client with certificate verification enabled. Its hooks can inspect and modify authenticated requests. NOMAD supplies the bearer header, turns off HTTPX default authentication for the request, and disables automatic redirects. These options affect REST calls. Credential exchanges use their own network settings.
+
+NOMAD sends the operation's query parameters and discards the borrowed client's default query parameters. Response hooks run before the SDK checks status, content encoding, and the 256 KiB JSON body limit. Keep hooks focused on response metadata. A hook that reads or decodes the response may buffer the body before the SDK can enforce its limit.
+
+A dispatch or hook failure from a borrowed client raises `TransportError`. The request may already have reached NOMAD. The SDK reserves `PoolTimeoutError` for connection waits it can classify as unsent.
 
 ## BearerTokenCredential class { #bearer-token-credential }
 

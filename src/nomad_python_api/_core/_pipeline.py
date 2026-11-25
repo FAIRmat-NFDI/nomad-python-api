@@ -1,5 +1,6 @@
 import json
 from collections.abc import Iterable
+from contextlib import closing
 from os import PathLike
 from typing import Protocol
 
@@ -100,18 +101,7 @@ class RequestPipeline:
                 raise ScopeNotAllowedError(info.name, missing)
         token = self._credential._get_token(endpoint=self._endpoint, scopes=info.required_scopes)
         try:
-            url = httpx.URL(self._endpoint + operation.path)
-            with self._http.stream(
-                operation.method,
-                url,
-                auth=None,
-                follow_redirects=False,
-                headers={
-                    "Host": url.netloc.decode("ascii"),
-                    "Authorization": f"Bearer {token}",
-                    "Accept-Encoding": "identity",
-                },
-            ) as response:
+            with closing(self._send_request(operation, token)) as response:
                 if response.status_code != 200:
                     error = _HTTP_ERRORS.get(response.status_code, HttpResponseError)
                     raise error(info.name, response.status_code)
@@ -122,14 +112,14 @@ class RequestPipeline:
                     if len(content) + len(chunk) > _MAX_RESPONSE_BYTES:
                         raise InvalidResponseError(f"{info.name} response exceeded the size limit.")
                     content.extend(chunk)
-        except httpx.PoolTimeout:
-            failure = PoolTimeoutError(
-                f"{info.name} timed out waiting for a connection before sending the request."
-            )
-        except httpx.TransportError:
+        except httpx.TransportError as error:
             failure = TransportError(
                 f"{info.name} could not reach NOMAD or exceeded a network timeout."
             )
+            if self._owns_http and isinstance(error, httpx.PoolTimeout):
+                failure = PoolTimeoutError(
+                    f"{info.name} timed out waiting for a connection before sending the request."
+                )
         else:
             try:
                 return json.loads(content)
@@ -137,6 +127,30 @@ class RequestPipeline:
                 pass
             raise InvalidResponseError(f"{info.name} returned invalid JSON.")
         raise failure
+
+    def _send_request(self, operation: Operation, token: str) -> httpx.Response:
+        url = httpx.URL(self._endpoint + operation.path)
+        try:
+            request = self._http.build_request(
+                operation.method,
+                url,
+                headers={
+                    "Host": url.netloc.decode("ascii"),
+                    "Authorization": f"Bearer {token}",
+                    "Accept-Encoding": "identity",
+                },
+            )
+            # HTTPX merges client defaults into the query when building a request.
+            request.url = url
+            return self._http.send(request, stream=True, auth=None, follow_redirects=False)
+        except Exception:
+            if self._owns_http:
+                raise
+            # Borrowed hooks can fail even after the server accepted the request.
+        raise TransportError(
+            f"{operation.info.name} failed in the borrowed HTTP client. "
+            "The request may have reached NOMAD."
+        )
 
     def close(self) -> None:
         """Close the SDK session while leaving caller-owned resources open."""

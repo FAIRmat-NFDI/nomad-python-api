@@ -49,40 +49,67 @@ Create a PAT with `users:read` in **User Settings → Tokens**, then set `NOMAD_
 
 ### Tune network settings { #tune-network-settings }
 
-Choose the simplest setup that meets your application's needs.
+**Start with `NomadClient(credential=…)`.** A notebook, script, or HPC worker normally uses one client and reuses its pool for every call. Each client defaults to 10 connections and keeps up to 5 idle for reuse.
 
-| Situation | Use | What you control |
-| --- | --- | --- |
-| One script or notebook uses one credential | `NomadClient(credential=…)` | The SDK manages the pool and timeouts. Reuse the client across calls and close it when finished. |
-| One process needs a smaller connection budget or more time to receive data | `NomadClient(pool_limits=…, timeouts=…)` | The SDK owns a pool configured for your workload. |
-| Several clients in one process need a shared connection budget and separate sessions | `NomadClient(transport=…)` | Your application owns one pool. Each client keeps its own cookie jar, credential, scope policy, and API timeouts. |
-| Your application already has an approved HTTPX client for an institutional proxy or request tracing | `NomadClient(http_client=…)` | Your application owns the pool, TLS settings, timeouts, cookies, and hooks. |
-
-The example below returns one account using the configured pool. The connection count caps concurrent HTTP work on this client. The pool timeout controls how long a call waits for a connection. Read and write timeouts measure inactivity within their phases. A transfer that keeps making progress can exceed either timeout in total duration. [Client settings and defaults](api.md#connection-limits)
+For example, a worker with a smaller connection budget can set `pool_limits` and `timeouts` directly on `NomadClient`. This example returns one account with a four-connection pool and a three-second wait for a free slot. The SDK creates and closes the pool for you. Read and write timeouts measure inactivity within their phases. A transfer that keeps making progress can take longer in total. [Client settings and defaults](api.md#connection-limits)
 
 ```python
 --8<-- "tests/snippets/identity/test_authentication.py:client_network_settings"
 ```
 
-### Share or borrow HTTP connections { #share-or-borrow-http-connections }
+Use the [advanced connection setups](#share-or-borrow-http-connections) when several clients must share one pool or your application needs a custom network setup.
 
-Set `NOMAD_PAT` and, for the shared-pool example, `NOMAD_SECOND_PAT` to tokens with `users:read` on the same deployment. Each call returns the corresponding account.
+### Advanced connection setups { #share-or-borrow-http-connections }
 
-=== "Share a transport"
+!!! info "Advanced · Optional"
 
-    Use this when one process needs separate credentials or scope policies for different parts of a job. The example's two clients share a total of eight connections. Each client sends its own bearer token and keeps a separate cookie jar.
+    Standard sign-in, local notebooks, and HPC workers that use one client per process can use the [regular settings](#tune-network-settings).
 
-    Put `pool_limits` and any private `ca_bundle` on `NomadTransport`. Put `timeouts` on each `NomadClient` if its calls need different wait times. Keep the outer transport open until both clients finish.
+#### Summary and basic examples { #advanced-connection-summary }
+
+Transport injection lets your application supply the connections used by `NomadClient`. A shared `NomadTransport` supplies only the pool. A borrowed `httpx.Client` supplies the HTTP session and its network configuration. In either mode, the SDK uses the credential's deployment and applies the client's scope policy.
+
+| Connection setup | Pass to `NomadClient` | Where settings go | Who closes the pool |
+| --- | --- | --- | --- |
+| SDK-managed pool | `pool_limits=…, timeouts=…` | Pool limits, CA trust, and API timeouts on `NomadClient` | The SDK client |
+| Shared transport | `transport=…` | Pool limits and CA trust on `NomadTransport`. API timeouts on each client | The application |
+| Borrowed HTTPX client | `http_client=…` | Pool limits, TLS trust, proxy, and timeouts on `httpx.Client` or its transport | The application |
+
+For either example, set `NOMAD_PAT` to a Central token with `users:read`. Each call returns the authenticated account.
+
+=== "Share a connection pool"
+
+    Two NOMAD clients use a single pool. Each has its own HTTP session and cookie jar. Close the clients before closing the transport.
+
+    ```python
+    --8<-- "tests/snippets/identity/test_authentication.py:basic_shared_transport"
+    ```
+
+=== "Borrow an HTTPX client"
+
+    The NOMAD client uses the supplied HTTPX session. Your application can continue using that session after its NOMAD client closes.
+
+    ```python
+    --8<-- "tests/snippets/identity/test_authentication.py:basic_borrowed_http_client"
+    ```
+
+#### Use cases { #advanced-connection-use-cases }
+
+=== "HPC coordinator with two credentials"
+
+    Suppose one Linux HPC coordinator runs two parts of a job, each with its own PAT and scope policy. With two independently configured eight-connection clients, the process could open 16 connections. A single `NomadTransport` capped at eight gives both parts one eight-connection budget. Each client keeps its own cookie jar and can have a different timeout. The calls share the connection budget, so one client can occupy all eight slots.
+
+    Set `NOMAD_PAT` and `NOMAD_SECOND_PAT` to tokens with `users:read` from the same deployment. Set `NOMAD_API_URL` for an Oasis. Each call returns the account associated with its PAT. The first client waits up to three seconds for a connection. The second waits up to ten. Keep the outer transport open until both clients finish. For separate worker processes, use [worker-local configuration](#configure-an-hpc-worker) and size the total budget in the scheduler.
 
     ```python
     --8<-- "tests/snippets/identity/test_authentication.py:share_transport"
     ```
 
-=== "Use an existing HTTPX client"
+=== "Institutional proxy or application tracing"
 
-    Use this when your application already configures its network through HTTPX. Set `NOMAD_HTTPS_PROXY` to your institution's approved proxy URL if you need one. The example connects to Central. For Oasis, pass the Oasis API URL as the credential's `endpoint`. Keep certificate verification enabled and review tracing hooks so they record timing and status without exposing credentials or research data.
+    An institute may require the application's approved HTTP proxy to reach its Oasis. Set `NOMAD_API_URL` to that deployment's HTTPS API v1 URL, `NOMAD_PAT` to its PAT with `users:read`, and `NOMAD_HTTPS_PROXY` to the approved proxy URL. Use a trusted HTTPX session with certificate verification enabled. If the institute uses a private CA, configure that trust on the HTTPX client. The example returns the account and records only the response status when application logging is enabled.
 
-    Configure the pool, TLS trust, and timeouts on the HTTPX client. Multiple NOMAD clients borrowing the same HTTPX object also share its cookies and default headers. The NOMAD request pipeline supplies the bearer header and disables automatic redirects for its requests. Keep the HTTPX client open until all borrowers finish.
+    Multiple NOMAD clients borrowing the same HTTPX object share its cookies and default headers. The SDK sets each request's bearer token and query parameters, and disables automatic redirects. Keep hooks focused on metadata. If a hook reads the body or raises an exception, it can buffer data before SDK validation or interrupt a call whose request already reached NOMAD. [Borrowed client behavior](api.md#connection-ownership-and-configuration)
 
     ```python
     --8<-- "tests/snippets/identity/test_authentication.py:borrow_http_client"
