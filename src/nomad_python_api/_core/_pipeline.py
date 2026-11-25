@@ -146,7 +146,9 @@ class RequestPipeline:
         request = None
         status_code = None
         try:
-            request = self._http.build_request(
+            # Borrow the HTTP session without merging service-specific request defaults.
+            build_request = self._http.build_request if self._owns_http else httpx.Request
+            request = build_request(
                 operation.method,
                 url,
                 headers={
@@ -155,8 +157,6 @@ class RequestPipeline:
                     "Accept-Encoding": "identity",
                 },
             )
-            # HTTPX merges client defaults into the query when building a request.
-            request.url = url
             return self._http.send(request, stream=True, auth=None, follow_redirects=False)
         except Exception as error:
             if self._owns_http:

@@ -87,7 +87,7 @@ For either example, set `NOMAD_PAT` to a Central token with `users:read`. Each c
 
 === "Borrow an HTTPX client"
 
-    The NOMAD client uses the supplied HTTPX session. Your application can continue using that session after its NOMAD client closes.
+    The NOMAD client uses the supplied HTTPX session's network settings and hooks. Your application can continue using that session after its NOMAD client closes.
 
     ```python
     --8<-- "tests/snippets/identity/test_authentication.py:basic_borrowed_http_client"
@@ -109,7 +109,7 @@ For either example, set `NOMAD_PAT` to a Central token with `users:read`. Each c
 
     An institute may require the application's approved HTTP proxy to reach its Oasis. Set `NOMAD_API_URL` to that deployment's HTTPS API v1 URL, `NOMAD_PAT` to its PAT with `users:read`, and `NOMAD_HTTPS_PROXY` to the approved proxy URL. Use a trusted HTTPX session with certificate verification enabled. If the institute uses a private CA, configure that trust on the HTTPX client. The example returns the account and records only the response status when application logging is enabled.
 
-    Multiple NOMAD clients borrowing the same HTTPX object share its cookies and default headers. The SDK sets each request's bearer token and query parameters, and disables automatic redirects. Keep hooks focused on metadata. If a hook reads the body or raises an exception, it can buffer data before SDK validation or interrupt a call whose request already reached NOMAD. [Borrowed client behavior](api.md#connection-ownership-and-configuration)
+    The SDK builds each NOMAD request with its own bearer token, headers, and query parameters. The borrowed client's default headers, cookies, query parameters, and authentication apply to the application's own HTTPX calls. HTTPX can still store cookies from NOMAD responses in the shared jar. Keep hooks focused on metadata. If a hook reads the body or raises an exception, it can buffer data before SDK validation or interrupt a call whose request already reached NOMAD. [Borrowed client behavior](api.md#connection-ownership-and-configuration)
 
     ```python
     --8<-- "tests/snippets/identity/test_authentication.py:borrow_http_client"

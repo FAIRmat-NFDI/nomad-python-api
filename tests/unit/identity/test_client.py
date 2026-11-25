@@ -211,15 +211,19 @@ def test_injected_http_client_keeps_ownership_and_nomad_request_rules():
 
     def respond(request):
         requests.append(request)
-        return httpx.Response(302, headers={"Location": "https://other.example/"})
+        if request.url.host == "nomad-lab.eu":
+            return httpx.Response(302, headers={"Location": "https://other.example/"})
+        return httpx.Response(200)
 
     credential = BearerTokenCredential(_TOKEN)
     with httpx.Client(
         transport=httpx.MockTransport(respond),
-        auth=("wrong-user", "wrong-password"),
-        headers={"Host": "other.example"},
+        auth=("app-user", "app-password"),
+        headers={"Host": "other.example", "X-API-Key": "app-fixture-key"},
+        cookies={"session": "app-fixture-cookie"},
         params={"page_size": 20},
         follow_redirects=True,
+        timeout=httpx.Timeout(connect=5, pool=3, read=60, write=60),
     ) as external:
         with NomadClient(credential=credential, http_client=external) as client:
             with pytest.raises(HttpResponseError) as caught:
@@ -228,11 +232,20 @@ def test_injected_http_client_keeps_ownership_and_nomad_request_rules():
         assert not external.is_closed
         with pytest.raises(RuntimeError, match="closed"):
             client.identity.me()
+        assert len(requests) == 1
+        assert external.get("https://other.example/account").status_code == 200
 
-    assert len(requests) == 1
-    assert str(requests[0].url) == f"{_PROD}/users/me"
-    assert requests[0].headers["Host"] == "nomad-lab.eu"
-    assert requests[0].headers["Authorization"] == f"Bearer {_TOKEN}"
+    nomad_request, app_request = requests
+    assert str(nomad_request.url) == f"{_PROD}/users/me"
+    assert nomad_request.headers["Host"] == "nomad-lab.eu"
+    assert nomad_request.headers["Authorization"] == f"Bearer {_TOKEN}"
+    assert "X-API-Key" not in nomad_request.headers
+    assert "Cookie" not in nomad_request.headers
+    assert nomad_request.extensions["timeout"] == {"connect": 5, "pool": 3, "read": 60, "write": 60}
+    assert app_request.url.params["page_size"] == "20"
+    assert app_request.headers["Authorization"].startswith("Basic ")
+    assert app_request.headers["X-API-Key"] == "app-fixture-key"
+    assert app_request.headers["Cookie"] == "session=app-fixture-cookie"
 
 
 @pytest.mark.parametrize(("status", "sdk_error"), [
