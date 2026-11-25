@@ -109,7 +109,11 @@ For either example, set `NOMAD_PAT` to a Central token with `users:read`. Each c
 
     An institute may require the application's approved HTTP proxy to reach its Oasis. Set `NOMAD_API_URL` to that deployment's HTTPS API v1 URL, `NOMAD_PAT` to its PAT with `users:read`, and `NOMAD_HTTPS_PROXY` to the approved proxy URL. Use a trusted HTTPX session with certificate verification enabled. If the institute uses a private CA, configure that trust on the HTTPX client. The example returns the account and records only the response status when application logging is enabled.
 
-    The SDK builds each NOMAD request with its own bearer token, headers, and query parameters. The borrowed client's default headers, cookies, query parameters, and authentication apply to the application's own HTTPX calls. HTTPX can still store cookies from NOMAD responses in the shared jar. Keep hooks focused on metadata. If a hook reads the body or raises an exception, it can buffer data before SDK validation or interrupt a call whose request already reached NOMAD. [Borrowed client behavior](api.md#connection-ownership-and-configuration)
+    The SDK builds each NOMAD request with its own bearer token, headers, and query parameters. The borrowed client's default headers, cookies, query parameters, and authentication apply to the application's own HTTPX calls. Keep hooks focused on metadata. If a hook reads the body or raises an exception, it can buffer data before SDK validation or interrupt a call whose request already reached NOMAD.
+
+    !!! note "Response cookies"
+
+        NOMAD SDK requests omit cookies from the borrowed client's jar. HTTPX can still store cookies from a NOMAD response and send them on a later direct application call when the cookie rules match. Use a dedicated HTTPX client for NOMAD when you need custom network settings and a separate cookie jar. Use [`NomadTransport`](api.md#nomad-transport) to share connections across NOMAD clients with separate cookie jars. [Response-cookie behavior](api.md#borrowed-httpx-response-cookies)
 
     ```python
     --8<-- "tests/snippets/identity/test_authentication.py:borrow_http_client"

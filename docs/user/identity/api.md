@@ -135,7 +135,17 @@ Import from `nomad_python_api`. Use a context manager or call `close()` after al
 | `is_closed` | Read-only property | `bool` | Indicates whether the shared pool is closed. |
 | `close()` | Instance method | `None` | Closes the shared pool. Call after its borrowing clients finish. Repeated calls are safe. |
 
-See the [worked network examples](index.md#share-or-borrow-http-connections). NOMAD borrows the HTTPX client's connection pool, proxy, TLS settings, timeouts, and hooks. The SDK constructs its own headers and query parameters and disables automatic redirects. The borrowed client's default headers, cookies, query parameters, and authentication stay with the application's own requests. HTTPX can still store response cookies in the borrowed client. Credential exchanges use their own network settings.
+## Borrowed HTTPX client { #borrowed-httpx-client }
+
+See the [worked network examples](index.md#share-or-borrow-http-connections). NOMAD borrows the HTTPX client's connection pool, proxy, TLS settings, timeouts, and hooks. The SDK constructs its own headers and query parameters and disables automatic redirects. The borrowed client's default headers, cookies, query parameters, and authentication stay with the application's own requests. Credential exchanges use their own network settings.
+
+### Response cookies { #borrowed-httpx-response-cookies }
+
+NOMAD SDK requests omit cookies from the borrowed HTTPX client's jar. HTTPX can still store `Set-Cookie` values from NOMAD responses in that jar. Later direct application requests through the same HTTPX client may send those cookies when their domain, path, and other cookie rules match.
+
+For custom network settings with cookie isolation from other application requests, dedicate an HTTPX client to NOMAD. For several NOMAD clients that need one connection pool and separate cookie jars, use [`NomadTransport`](#nomad-transport).
+
+### Request hooks and errors
 
 Use a trusted HTTPX client with certificate verification enabled. Its hooks can inspect and modify authenticated requests. Response hooks run before the SDK checks status, content encoding, and the 256 KiB JSON body limit. Keep hooks focused on response metadata. A hook that reads or decodes the response may buffer the body before the SDK can enforce its limit.
 
