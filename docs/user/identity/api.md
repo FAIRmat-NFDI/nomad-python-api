@@ -7,6 +7,8 @@ This reference lists the SDK classes, instance methods, read-only properties, mo
 | Type | Kind | Purpose |
 | --- | --- | --- |
 | [`NomadClient`](#nomad-client) | Class | Runs operations against the credential's deployment. |
+| [`NomadTransport`](#nomad-transport) | Class | Owns a connection pool that several clients can borrow. |
+| [`ConnectionLimits`](#connection-limits) and [`NetworkTimeouts`](#network-timeouts) | Frozen data classes | Configure connections and phase timeouts for API requests. |
 | [`BearerTokenCredential`](#bearer-token-credential) | Class | Supplies an existing PAT or Keycloak access token. |
 | [`BrowserCredential`](#browser-credential) | Class | Signs in through the system browser and manages the token session. |
 | [`PasswordCredential`](#password-credential) | Class | Signs in using the deployment's password grant. |
@@ -26,6 +28,10 @@ NomadClient(
     credential: BearerTokenCredential | BrowserCredential | PasswordCredential,
     allowed_scopes: Iterable[Scope] | None = None,
     ca_bundle: str | PathLike[str] | None = None,
+    pool_limits: ConnectionLimits | None = None,
+    timeouts: NetworkTimeouts | None = None,
+    transport: NomadTransport | None = None,
+    http_client: httpx.Client | None = None,
 )
 ```
 
@@ -34,6 +40,22 @@ NomadClient(
 | `credential` | `BearerTokenCredential`, `BrowserCredential`, or `PasswordCredential` | Yes | — | Supplies the access token and selects the deployment. |
 | `allowed_scopes` | `Iterable[Scope]` or `None` | No | `None` | Local policy. The client takes an immutable snapshot of the supplied scopes. |
 | `ca_bundle` | `str`, `PathLike[str]`, or `None` | No | `None` | Path to a trusted PEM CA bundle for API calls. With `None`, HTTPX uses its default trust bundle. |
+| `pool_limits` | [`ConnectionLimits`](#connection-limits) or `None` | No | `None` | Connection limits for this client. `None` uses the settings class defaults. |
+| `timeouts` | [`NetworkTimeouts`](#network-timeouts) or `None` | No | `None` | Per-phase timeouts for API calls. `None` uses the settings class defaults. |
+| `transport` | [`NomadTransport`](#nomad-transport) or `None` | No | `None` | **Advanced.** Caller-owned connection pool. Set `pool_limits` and `ca_bundle` on the transport. Set `timeouts` on each client as needed. |
+| `http_client` | Synchronous `httpx.Client` or `None` | No | `None` | **Advanced.** Trusted, caller-owned HTTPX client. Configure its network settings when you create it. Combining it with `transport`, `pool_limits`, `ca_bundle`, or `timeouts` raises `ValueError`. |
+
+#### Connection ownership and configuration
+
+Start with the default client. Choose a borrowed connection setup when the [advanced use cases](index.md#share-or-borrow-http-connections) apply.
+
+| Mode | Configure pool and CA trust on | Configure API timeouts on | Close the pool with |
+| --- | --- | --- | --- |
+| Default client | `NomadClient` | `NomadClient` | `NomadClient.close()` or its context manager |
+| Shared transport | `NomadTransport` | Each `NomadClient` | `NomadTransport.close()` or its outer context manager |
+| Existing HTTPX client | The HTTPX client or its transport | The HTTPX client | The HTTPX client's `close()` or its outer context manager |
+
+Providing `pool_limits` or `ca_bundle` on a client that uses `transport` raises `ValueError`. A closed injected object also raises `ValueError` during construction. See [when to choose each mode](index.md#tune-network-settings).
 
 ### Properties
 
@@ -50,7 +72,7 @@ Read the property without parentheses. `None` means all scopes pass the local po
 
 | Method signature | Return type | Description |
 | --- | --- | --- |
-| `close()` | `None` | Closes the client's API connections. A credential can be reused by another client on the same deployment. Later API calls on the closed client raise `RuntimeError`. |
+| `close()` | `None` | Closes the client and the connections it owns. Caller-owned transports and HTTP clients stay open. Later API calls on the closed client raise `RuntimeError`. |
 
 ### Worked example: open and close an Oasis client
 
@@ -61,6 +83,73 @@ Set `OASIS_PAT` to a token with `users:read` and replace the example URL with yo
 ```
 
 On success, `account` contains your Oasis account. The `finally` block closes the client's connections even if the lookup raises an exception.
+
+### Worked example for connection limits and timeouts
+
+Set `NOMAD_PAT` to a token with `users:read`. This client allows four connections, holds up to two idle connections, and waits up to three seconds for a free connection. A successful request returns an `Account`.
+
+```python
+--8<-- "tests/snippets/identity/test_authentication.py:client_network_settings"
+```
+
+Create and reuse a client within each HPC worker process. Four workers running this example have independent pools and can use up to 16 connections in total.
+
+## ConnectionLimits data class { #connection-limits }
+
+Import from `nomad_python_api`. All fields are optional keyword arguments and read-only after construction. The pool limits apply to each client.
+
+| Field | Type | Default | Description |
+| --- | --- | --- | --- |
+| `max_connections` | `int` | `10` | Positive maximum number of connections in the pool. |
+| `max_keepalive_connections` | `int` | `5` | Maximum idle connections to retain, up to `max_connections`. Use zero to close idle connections. |
+| `keepalive_expiry` | `float` | `5.0` | Finite number of seconds before an idle connection expires. Use zero to expire idle connections immediately. |
+
+## NetworkTimeouts data class { #network-timeouts }
+
+Import from `nomad_python_api`. All fields are optional keyword arguments and read-only after construction. Give each timeout a finite, positive value in seconds.
+
+| Field | Type | Default | Description |
+| --- | --- | --- | --- |
+| `connect` | `float` | `5.0` | Maximum wait to establish a connection. |
+| `pool` | `float` | `10.0` | Maximum wait to acquire a connection in an SDK-managed HTTP session. Failure raises `PoolTimeoutError`. |
+| `read` | `float` | `10.0` | Maximum wait for incoming data during a network read. |
+| `write` | `float` | `10.0` | Maximum wait to send a chunk during a network write. |
+
+These limits apply to individual phases of the API request. Values above Python's platform-specific `threading.TIMEOUT_MAX` raise `ValueError` during construction. Credentials use their own connection and sign-in settings.
+
+## NomadTransport class { #nomad-transport }
+
+!!! info "Advanced · Optional"
+
+    Use this separate object when several sessions in one process need the same connection budget. For one client, [configure the SDK-owned pool directly](index.md#tune-network-settings).
+
+Import from `nomad_python_api`. Use a context manager or call `close()` after all borrowing clients finish. The pool is shared within a process. Each borrowing client keeps its own HTTP session, cookies, credential, and scope policy.
+
+| Keyword-only argument | Type | Default | Purpose |
+| --- | --- | --- | --- |
+| `pool_limits` | `ConnectionLimits` or `None` | `None` | Shared connection limits. |
+| `ca_bundle` | `str`, `PathLike[str]`, or `None` | `None` | Trusted PEM CA bundle for the shared pool. |
+
+| Member | Kind | Returns | Purpose |
+| --- | --- | --- | --- |
+| `is_closed` | Read-only property | `bool` | Indicates whether the shared pool is closed. |
+| `close()` | Instance method | `None` | Closes the shared pool. Call after its borrowing clients finish. Repeated calls are safe. |
+
+## Borrowed HTTPX client { #borrowed-httpx-client }
+
+See the [worked network examples](index.md#share-or-borrow-http-connections). NOMAD borrows the HTTPX client's connection pool, proxy, TLS settings, timeouts, and hooks. The SDK constructs its own headers and query parameters and disables automatic redirects. The borrowed client's default headers, cookies, query parameters, and authentication stay with the application's own requests. Credential exchanges use their own network settings.
+
+### Response cookies { #borrowed-httpx-response-cookies }
+
+NOMAD SDK requests omit cookies from the borrowed HTTPX client's jar. HTTPX can still store `Set-Cookie` values from NOMAD responses in that jar. Later direct application requests through the same HTTPX client may send those cookies when their domain, path, and other cookie rules match.
+
+For custom network settings with cookie isolation from other application requests, dedicate an HTTPX client to NOMAD. For several NOMAD clients that need one connection pool and separate cookie jars, use [`NomadTransport`](#nomad-transport).
+
+### Request hooks and errors
+
+Use a trusted HTTPX client with certificate verification enabled. Its hooks can inspect and modify authenticated requests. Response hooks run before the SDK checks status, content encoding, and the 256 KiB JSON body limit. Keep hooks focused on response metadata. A hook that reads or decodes the response may buffer the body before the SDK can enforce its limit.
+
+If a response hook calls `raise_for_status()` on the original NOMAD response, the SDK raises the corresponding HTTP exception, such as `AuthorizationError` for HTTP `403` or `RateLimitError` for HTTP `429`. A status error for a separate request made by the hook, or another dispatch or hook failure, raises `TransportError`. In those cases the original request may already have reached NOMAD. The SDK reserves `PoolTimeoutError` for connection waits it can classify as unsent.
 
 ## BearerTokenCredential class { #bearer-token-credential }
 
@@ -122,9 +211,20 @@ BrowserCredential(
 | `identity_provider` | `str` or `None` | No | `None` | Optional realm provider alias sent as `kc_idp_hint`. |
 | `ca_bundle` | `str`, `PathLike[str]`, or `None` | No | `None` | Trusted PEM CA bundle for credential HTTPS calls. Configure the browser's trust and `NomadClient(ca_bundle=...)` separately where needed. |
 | `login_timeout` | `float` | No | `180` | Positive time in seconds to wait for the loopback callback. |
-| `refresh_margin` | `float` | No | `30` | Seconds before expiry to renew, capped at half the access token's lifetime. Use `0` to refresh at expiry. |
-| `redirect_port` | `int` | No | `0` | Loopback TCP port. `0` asks the operating system for an available port. |
-| `redirect_path` | `str` | No | `"/"` | Absolute callback path registered for the public client. The listener uses `127.0.0.1`. |
+
+### Advanced settings { #advanced-browser-settings }
+
+The defaults work for standard sign-in. Set the callback port or path when your Keycloak client registration requires specific values.
+
+| Optional keyword argument | Type | Default | Description |
+| --- | --- | --- | --- |
+| `refresh_margin` | `float` | `30` | Start renewing up to this many seconds before expiry, capped at half the token's lifetime. Renewal happens on the next request that needs a token. Use `0` to wait until expiry. |
+| `redirect_port` | `int` | `0` | Loopback TCP port. `0` asks the operating system for an available port. |
+| `redirect_path` | `str` | `"/"` | Absolute callback path registered for the public client. The listener uses `127.0.0.1`. |
+
+If Keycloak registers `http://127.0.0.1:9123/return`, pass `redirect_port=9123` and `redirect_path="/return"` to `BrowserCredential`. The browser returns the authorization code to that local callback. Set `endpoint` to the NOMAD API base URL for the deployment.
+
+Browser credentials renew when a refresh token is available. [Password credentials](#password-credential) use the same margin to time their next password exchange.
 
 ### Instance methods
 
@@ -165,7 +265,7 @@ PasswordCredential(
 | `password` | `str` or `None` | With explicit credentials | `None` | NOMAD password. Pass a complete pair through the arguments or the environment. |
 | `endpoint` | `str` | No | `"prod"` | Central or a complete HTTPS NOMAD API v1 base URL. |
 | `ca_bundle` | `str`, `PathLike[str]`, or `None` | No | `None` | Trusted PEM CA bundle for the password exchange. Configure `NomadClient(ca_bundle=...)` separately for API calls where needed. |
-| `refresh_margin` | `float` | No | `30` | Seconds before expiry to renew, capped at half the access token's lifetime. Use `0` to renew at expiry. |
+| `refresh_margin` | `float` | No | `30` | Advanced setting for when to repeat the password exchange. See [how the renewal margin works](#advanced-browser-settings). |
 
 ### Instance methods
 
@@ -268,6 +368,7 @@ Import these exception classes from `nomad_python_api.exceptions`. Catch `NomadE
 | `AuthorizationError` | `HttpResponseError` | NOMAD returned HTTP 403. Check token scopes and account access. |
 | `RateLimitError` | `HttpResponseError` | NOMAD returned HTTP 429. Wait before trying again. |
 | `TransportError` | `NomadError` | The API transport failed or timed out. Check connectivity and certificate trust. |
+| `PoolTimeoutError` | `TransportError` | The data request timed out before it acquired a connection. Review client concurrency and the pool wait budget. |
 | `InvalidResponseError` | `NomadError` | The API response could not be interpreted as the expected account. |
 
 ### Worked example: handle scope and authentication errors

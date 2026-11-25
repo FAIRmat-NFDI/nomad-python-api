@@ -182,7 +182,7 @@ stateDiagram-v2
     Closed --> [*]
 ```
 
-The state diagram describes the API client lifecycle. The browser and password credentials keep their sessions in memory, and the bearer credential holds its supplied token. Each can be reused in another client on its bound deployment. API sockets belong to each client's pool.
+The state diagram describes the API client lifecycle. The browser and password credentials keep their sessions in memory, and the bearer credential holds its supplied token. Each can be reused in another client on its bound deployment. The default client owns its API pool. A client using an injected transport or HTTPX client leaves the borrowed pool open.
 
 ## Timing and resource limits
 
@@ -195,7 +195,7 @@ flowchart LR
     Read --> Parse["Validate and map<br/>256 KiB body limit"]
 ```
 
-HTTPX timeouts bound individual phases. Read and write timeouts apply to activity within the corresponding phase. They do not add up to a fixed end-to-end deadline. Pool limits are 10 connections and 5 idle keep-alive connections per client. The account call requests an uncompressed body so the byte limit can be enforced before JSON parsing. [HTTPX timeout model](https://www.python-httpx.org/advanced/timeouts/) · [HTTPX pool limits](https://www.python-httpx.org/advanced/resource-limits/)
+The API client defaults to 10 connections, 5 idle keep-alive connections, and 5 seconds of idle reuse. The connect timeout defaults to 5 seconds. Pool, read, and write timeouts each default to 10 seconds. Callers can configure each setting. Read and write timeouts measure inactivity within their respective phases, and the connect timeout governs opening a connection. A `PoolTimeoutError` means the data request timed out before sending. The account call requests an uncompressed body so the byte limit can be enforced before JSON parsing. [SDK connection settings](../../user/identity/api.md#connection-limits) · [HTTPX timeout model](https://www.python-httpx.org/advanced/timeouts/)
 
 ## Identity and scope data
 

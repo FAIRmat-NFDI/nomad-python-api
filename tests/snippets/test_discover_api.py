@@ -11,7 +11,10 @@ import pytest
         ("example", "example: An example export.\n"),
         (
             "actual",
+            "ConnectionLimits: Bound the client's connection pool and idle connection reuse.\n"
+            "NetworkTimeouts: Set timeouts in seconds for the individual API network phases.\n"
             "NomadClient: Use a bearer credential to call a NOMAD deployment.\n"
+            "NomadTransport: Own a connection pool that several NOMAD clients can borrow.\n"
             "Scope: NOMAD permission names used by this SDK.\n",
         ),
     ],

@@ -11,6 +11,7 @@ __all__ = [
     "InvalidResponseError",
     "NomadError",
     "PasswordAuthenticationError",
+    "PoolTimeoutError",
     "RateLimitError",
     "ReauthenticationRequiredError",
     "ScopeNotAllowedError",
@@ -79,6 +80,10 @@ class RateLimitError(HttpResponseError):
 
 class TransportError(NomadError):
     """A connection, timeout, or other HTTP transport failure occurred."""
+
+
+class PoolTimeoutError(TransportError):
+    """An API request timed out waiting for a connection before it was sent."""
 
 
 class InvalidResponseError(NomadError):

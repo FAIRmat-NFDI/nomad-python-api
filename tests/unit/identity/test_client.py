@@ -2,18 +2,24 @@
 
 import pickle
 import ssl
+from concurrent.futures import ThreadPoolExecutor
+from contextlib import ExitStack
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+from threading import TIMEOUT_MAX, Event, Thread
 from unittest.mock import Mock
 
 import httpx
 import pytest
 
-from nomad_python_api import NomadClient, Scope
+from nomad_python_api import ConnectionLimits, NetworkTimeouts, NomadClient, NomadTransport, Scope
+from nomad_python_api._core import _pipeline
 from nomad_python_api.exceptions import (
     AuthorizationError,
     ClientAuthenticationError,
     CredentialEndpointMismatchError,
     HttpResponseError,
     InvalidResponseError,
+    PoolTimeoutError,
     RateLimitError,
     ScopeNotAllowedError,
     TransportError,
@@ -89,8 +95,232 @@ def test_client_uses_explicit_tls_and_safe_http_defaults(nomad_http, monkeypatch
     assert options["verify"] is context
     assert options["follow_redirects"] is False
     assert options["trust_env"] is False
-    assert all(value > 0 for value in options["timeout"].as_dict().values())
+    assert options["timeout"] == httpx.Timeout(connect=5, pool=10, read=10, write=10)
+    assert options["limits"] == httpx.Limits(
+        max_connections=10, max_keepalive_connections=5, keepalive_expiry=5,
+    )
     assert nomad_http.clients[0].is_closed
+
+
+def test_client_uses_explicit_pool_limits_and_timeouts(nomad_http):
+    credential = BearerTokenCredential(_TOKEN)
+    limits = ConnectionLimits(max_connections=2, max_keepalive_connections=3, keepalive_expiry=0)
+    timeouts = NetworkTimeouts(**{"connect": 1, "pool": 2, "read": 3, "write": 4})
+    with NomadClient(credential=credential, pool_limits=limits, timeouts=timeouts) as client:
+        assert client.identity.me().user_id == "example-id"
+
+    options = nomad_http.client_options[0]
+    assert options["timeout"] == httpx.Timeout(connect=1, pool=2, read=3, write=4)
+    assert options["limits"] == httpx.Limits(
+        max_connections=2, max_keepalive_connections=2, keepalive_expiry=0,
+    )
+
+
+@pytest.mark.parametrize(("settings", "field", "value"), [
+    (ConnectionLimits, "max_connections", 0),
+    (ConnectionLimits, "max_connections", True),
+    (ConnectionLimits, "max_keepalive_connections", -1),
+    (ConnectionLimits, "max_keepalive_connections", 2.5),
+    (ConnectionLimits, "keepalive_expiry", float("inf")),
+    (NetworkTimeouts, "connect", float("nan")),
+    (NetworkTimeouts, "pool", 0),
+    (NetworkTimeouts, "pool", TIMEOUT_MAX * 2),
+    (NetworkTimeouts, "read", "10"),
+    (NetworkTimeouts, "write", -1),
+])
+def test_invalid_network_settings(settings, field, value):
+    with pytest.raises(ValueError, match=field):
+        settings(**{field: value})
+
+
+def test_invalid_network_setting_types_fail_before_transport(nomad_http):
+    credential = BearerTokenCredential(_TOKEN)
+    with pytest.raises(TypeError, match="ConnectionLimits"):
+        NomadClient(credential=credential, pool_limits={})
+    with pytest.raises(TypeError, match="NetworkTimeouts"):
+        NomadClient(credential=credential, timeouts={})
+    assert not nomad_http.clients
+
+
+@pytest.mark.parametrize("share_pool", [False, True])
+def test_saturated_pool_times_out_before_sending_a_request(monkeypatch, share_pool):
+    request_started = Event()
+    release_request = Event()
+    received_paths = []
+    body = b'{"user_id":"example-id"}'
+
+    class AccountHandler(BaseHTTPRequestHandler):
+        def do_GET(self):
+            received_paths.append(self.path)
+            request_started.set()
+            if not release_request.wait(timeout=10):
+                self.send_error(503)
+                return
+            self.send_response(200)
+            self.send_header("Content-Length", str(len(body)))
+            self.end_headers()
+            self.wfile.write(body)
+
+    with ThreadingHTTPServer(("127.0.0.1", 0), AccountHandler) as server:
+        # Exercise real HTTPX pooling against plaintext loopback using a test-only token.
+        endpoint = f"http://127.0.0.1:{server.server_port}/api/v1"
+        credential = BearerTokenCredential(_TOKEN)
+        monkeypatch.setattr(credential, "_endpoint", endpoint)
+        monkeypatch.setattr(_pipeline, "normalize_endpoint", lambda _: endpoint)
+        thread = Thread(target=server.serve_forever, kwargs={"poll_interval": 0.05})
+        thread.start()
+        try:
+            with ExitStack() as stack:
+                limits = ConnectionLimits(max_connections=1)
+                timeouts = NetworkTimeouts(pool=0.25)
+                if share_pool:
+                    transport = stack.enter_context(NomadTransport(pool_limits=limits))
+                    client = stack.enter_context(NomadClient(
+                        credential=credential, transport=transport, timeouts=timeouts,
+                    ))
+                    second = stack.enter_context(NomadClient(
+                        credential=credential, transport=transport, timeouts=timeouts,
+                    ))
+                else:
+                    client = second = stack.enter_context(NomadClient(
+                        credential=credential, pool_limits=limits, timeouts=timeouts,
+                    ))
+                executor = stack.enter_context(ThreadPoolExecutor(max_workers=1))
+                first = executor.submit(client.identity.me)
+                try:
+                    assert request_started.wait(timeout=5)
+                    with pytest.raises(PoolTimeoutError, match="before sending") as caught:
+                        second.identity.me()
+                    assert isinstance(caught.value, TransportError)
+                    assert caught.value.__context__ is None
+                    assert received_paths == ["/api/v1/users/me"]
+                finally:
+                    release_request.set()
+                assert first.result(timeout=5).user_id == "example-id"
+                if share_pool:
+                    client.close()
+                assert second.identity.me().user_id == "example-id"
+                assert received_paths == ["/api/v1/users/me"] * 2
+        finally:
+            server.shutdown()
+            thread.join()
+
+
+def test_injected_http_client_keeps_ownership_and_nomad_request_rules():
+    requests = []
+
+    def respond(request):
+        requests.append(request)
+        if request.url.host == "nomad-lab.eu":
+            return httpx.Response(302, headers={"Location": "https://other.example/"})
+        return httpx.Response(200)
+
+    credential = BearerTokenCredential(_TOKEN)
+    with httpx.Client(
+        transport=httpx.MockTransport(respond),
+        auth=("app-user", "app-password"),
+        headers={"Host": "other.example", "X-API-Key": "app-fixture-key"},
+        cookies={"session": "app-fixture-cookie"},
+        params={"page_size": 20},
+        follow_redirects=True,
+        timeout=httpx.Timeout(connect=5, pool=3, read=60, write=60),
+    ) as external:
+        with NomadClient(credential=credential, http_client=external) as client:
+            with pytest.raises(HttpResponseError) as caught:
+                client.identity.me()
+            assert caught.value.status_code == 302
+        assert not external.is_closed
+        with pytest.raises(RuntimeError, match="closed"):
+            client.identity.me()
+        assert len(requests) == 1
+        assert external.get("https://other.example/account").status_code == 200
+
+    nomad_request, app_request = requests
+    assert str(nomad_request.url) == f"{_PROD}/users/me"
+    assert nomad_request.headers["Host"] == "nomad-lab.eu"
+    assert nomad_request.headers["Authorization"] == f"Bearer {_TOKEN}"
+    assert "X-API-Key" not in nomad_request.headers
+    assert "Cookie" not in nomad_request.headers
+    assert nomad_request.extensions["timeout"] == {"connect": 5, "pool": 3, "read": 60, "write": 60}
+    assert app_request.url.params["page_size"] == "20"
+    assert app_request.headers["Authorization"].startswith("Basic ")
+    assert app_request.headers["X-API-Key"] == "app-fixture-key"
+    assert app_request.headers["Cookie"] == "session=app-fixture-cookie"
+
+
+@pytest.mark.parametrize(("status", "sdk_error"), [
+    (302, HttpResponseError),
+    (401, ClientAuthenticationError),
+    (403, AuthorizationError),
+    (429, RateLimitError),
+    (503, HttpResponseError),
+])
+def test_response_hook_preserves_confirmed_nomad_error(status, sdk_error):
+    requests = []
+
+    def respond(request):
+        requests.append(request)
+        return httpx.Response(status, text=_TOKEN)
+
+    with httpx.Client(
+        transport=httpx.MockTransport(respond),
+        event_hooks={"response": [httpx.Response.raise_for_status]},
+    ) as external:
+        with NomadClient(credential=BearerTokenCredential(_TOKEN), http_client=external) as client:
+            with pytest.raises(sdk_error) as caught:
+                client.identity.me()
+
+    error = caught.value
+    assert type(error) is sdk_error
+    assert error.status_code == status
+    assert error.operation == "identity.me"
+    assert error.__context__ is None
+    assert error.__cause__ is None
+    assert _TOKEN not in str(error) + repr(error)
+    assert len(requests) == 1
+
+
+@pytest.mark.parametrize("hook_error", [RuntimeError, httpx.PoolTimeout, httpx.HTTPStatusError])
+def test_response_hook_failures_report_unknown_request_outcome(hook_error):
+    requests = []
+
+    def respond(request):
+        requests.append(request)
+        return httpx.Response(200)
+
+    def inspect_response(response):
+        if hook_error is httpx.HTTPStatusError:
+            other_request = httpx.Request(response.request.method, response.request.url)
+            httpx.Response(429, request=other_request, text=_TOKEN).raise_for_status()
+        raise hook_error(_TOKEN)
+
+    with httpx.Client(
+        transport=httpx.MockTransport(respond),
+        event_hooks={"response": [inspect_response]},
+    ) as external:
+        with NomadClient(credential=BearerTokenCredential(_TOKEN), http_client=external) as client:
+            with pytest.raises(TransportError, match="may have reached NOMAD") as caught:
+                client.identity.me()
+
+    assert type(caught.value) is TransportError
+    assert caught.value.__context__ is None
+    assert _TOKEN not in str(caught.value)
+    assert len(requests) == 1
+
+
+def test_injected_transport_options_fail_before_a_request():
+    credential = BearerTokenCredential(_TOKEN)
+    with NomadTransport() as transport, httpx.Client() as external:
+        with pytest.raises(ValueError, match="http_client supplies"):
+            NomadClient(credential=credential, http_client=external, transport=transport)
+        with pytest.raises(ValueError, match="http_client supplies"):
+            NomadClient(credential=credential, http_client=external, timeouts=NetworkTimeouts())
+        with pytest.raises(ValueError, match="Configure CA trust and pool limits"):
+            NomadClient(credential=credential, transport=transport, pool_limits=ConnectionLimits())
+    with pytest.raises(ValueError, match="transport is closed"):
+        NomadClient(credential=credential, transport=transport)
+    with pytest.raises(ValueError, match="http_client is closed"):
+        NomadClient(credential=credential, http_client=external)
 
 
 def test_rejects_credential_on_same_host_different_deployment(nomad_http):

@@ -10,6 +10,7 @@ flowchart LR
         Caller["Python, Jupyter, or pyiron worker"] --> Client["NomadClient"]
         Secret["Job or environment secret"] --> Credential["Deployment-bound bearer credential"]
         Credential --> Client
+        Settings["Connection limits and phase timeouts"] --> Client
         Client --> Group["Identity operation group"]
         Group --> Pipeline["Shared request pipeline"]
         Pipeline --> Pool["Client-owned HTTPS pool"]
@@ -27,6 +28,7 @@ The client application and the chosen deployment are separate trust boundaries. 
 | Location | Responsibility |
 | --- | --- |
 | `nomad_python_api/_client.py` | Public constructor, feature group properties, and connection-pool lifecycle. |
+| `nomad_python_api/_network.py` | SDK-owned immutable connection limits and network timeout settings. |
 | `nomad_python_api/identity/` | Bearer credential, identity operations, account model, and public identity exports. |
 | `nomad_python_api/_core/` | Deployment URL validation, shared operation records, local scope policy, and HTTP response handling. |
 | `nomad_python_api/_scopes.py` and `exceptions.py` | Shared scope names and the exception types callers use across features. |
@@ -45,3 +47,28 @@ The public client wires feature groups to the shared pipeline. A feature declare
 | **Extension fields** | Add explicit per-operation mappings for a supported query, JSON, or multipart location. Keep destination, authentication, and required scopes under SDK control. |
 
 See [Identity architecture](../identity/index.md) for class relationships, call flow, state, and data. See [Develop for NOMAD Oasis](../oasis/index.md) to onboard a fork.
+
+## Network and transfer design
+
+The default client owns its pool. A caller can also share a `NomadTransport` between independent NOMAD sessions or inject a trusted synchronous HTTPX client. Both modes borrow caller-owned resources. The pipeline still checks the credential's complete deployment URL and local scopes before attaching a bearer token. Close borrowing clients before closing their shared transport or HTTPX client. [Transport examples](../../user/identity/index.md#share-or-borrow-http-connections)
+
+```mermaid
+flowchart LR
+    subgraph Process["One worker process"]
+        ClientA["Client A with credential A"] --> SessionA["HTTP session A"]
+        ClientB["Client B with credential B"] --> SessionB["HTTP session B"]
+        SessionA --> Pool["Caller-owned NomadTransport pool"]
+        SessionB --> Pool
+    end
+    Pool --> Deployment["NOMAD deployment"]
+```
+
+Sharing `NomadTransport` keeps connection reuse below the HTTP session boundary. Each client builds its own request and retains its own cookies and per-phase timeouts. With a borrowed HTTPX client, the SDK builds the operation URL and bearer header directly. Client-wide headers, request cookies, query parameters, and authentication stay with the application's own requests. The SDK borrows the network configuration and hooks and disables redirects for its calls. Inject an application client you trust because its hooks can alter authenticated requests.
+
+HTTPX can store cookies from a NOMAD response in the borrowed client's jar. On subsequent direct application requests, HTTPX can send those cookies when its cookie rules match. A dedicated HTTPX client isolates that jar from other application requests. `NomadTransport` shares connections across NOMAD sessions while each session owns its own jar. [Response-cookie behavior](../../user/identity/api.md#borrowed-httpx-response-cookies)
+
+For HPC, size the process-local pool and the number of active workers together. Eight workers with four connections each can open up to 32 connections. Monitor pool timeouts, throttling responses, bytes per second, and status-call latency before increasing parallelism. One coordinator can enforce a shared connection budget and fetch common inputs once for compute workers. A connection budget controls concurrent work. Rate controls can be enforced separately by the deployment or workflow. [Worker setup and scenarios](../../user/identity/index.md#configure-an-hpc-worker)
+
+The client passes [connection limits and phase timeouts](../../user/identity/api.md#connection-limits) into the shared request pipeline. A pool timeout from an SDK-managed session occurs before sending the data request. When a borrowed HTTPX client's hook raises an HTTP status error for the original NOMAD response, the normal SDK status mapping applies. Other borrowed-client failures surface as `TransportError` because the server may already have received the request. Keep these outcomes distinct so a caller can make the right recovery decision.
+
+Future uploads, downloads, and archive transfers share the pipeline's authentication and scope checks. Bulk data needs explicit streaming with bounded buffers and an overall deadline in addition to network inactivity timeouts. Reserve capacity for short status and metadata requests when transfers run concurrently. Use deployment-specific size limits for project planning and verify source identity before implementing download resume. Handle uncertain upload outcomes before offering replay.
