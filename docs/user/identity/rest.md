@@ -4,7 +4,7 @@ This reference covers REST endpoints called by the SDK. For token creation, rota
 
 ## GET /users/me { #get-users-me }
 
-**SDK method** · [`client.identity.me()`](index.md#check-your-account)
+**SDK instance method** · [`client.identity.me()`](api.md#identity-me)
 
 The contract below was checked against the [NOMAD Central API v1 schema](https://nomad-lab.eu/prod/v1/api/v1/openapi.json) for NOMAD 2.0.1. Check your Oasis's own OpenAPI document for deployment-specific differences.
 
@@ -54,7 +54,7 @@ Other unexpected statuses raise `HttpResponseError`. See the [SDK troubleshootin
 
 ## Browser login requests { #browser-login-rest }
 
-**SDK credential** · [`BrowserCredential`](index.md#browser-login)
+**SDK class** · [`BrowserCredential`](api.md#browser-credential)
 
 The authorization and token URLs come from an explicit pair of endpoints or from OIDC discovery at the supplied Keycloak issuer. Keycloak may send the browser through an institutional provider before returning it to the SDK callback. [Keycloak OIDC endpoints](https://www.keycloak.org/securing-apps/oidc-layers) · [OIDC discovery](https://openid.net/specs/openid-connect-discovery-1_0.html)
 
@@ -70,7 +70,7 @@ Both token requests use `application/x-www-form-urlencoded`. The SDK requires `a
 
 ## POST /auth/token { #password-login-rest }
 
-**SDK credential** · [`PasswordCredential`](index.md#password-login)
+**SDK class** · [`PasswordCredential`](api.md#password-credential)
 
 This request uses the credential's NOMAD API base URL and sends an `application/x-www-form-urlencoded` body. The NOMAD deployment selects the Keycloak realm and client. [NOMAD production OpenAPI](https://nomad-lab.eu/prod/v1/api/v1/openapi.json) · [Upstream password handler](https://github.com/FAIRmat-NFDI/nomad/blob/0f19b93ffec1950e29b145fb008aad967ca9d530/nomad/app/v1/routers/auth.py#L344-L378)
 

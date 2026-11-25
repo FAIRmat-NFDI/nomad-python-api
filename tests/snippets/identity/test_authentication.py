@@ -69,6 +69,33 @@ def test_dictionary_setup_and_local_discovery(nomad_http):
     assert_account_request(nomad_http)
 
 
+def test_inspect_and_read_account(nomad_http, capsys):
+    # --8<-- [start:inspect_and_read_account]
+    import os
+
+    from nomad_python_api import NomadClient, Scope
+    from nomad_python_api.identity import BearerTokenCredential
+
+    credential = BearerTokenCredential(os.environ["NOMAD_PAT"])
+    with NomadClient(credential=credential, allowed_scopes={Scope.USERS_READ}) as client:
+        info = client.identity.get_operation_info("me")
+        print("Allowed:", sorted(scope.value for scope in client.allowed_scopes or ()))
+        print("Required:", sorted(scope.value for scope in info.required_scopes))
+
+        account = client.identity.me()
+        print("Account returned:", bool(account.user_id))
+        print("Username available:", account.username is not None)
+    # --8<-- [end:inspect_and_read_account]
+
+    assert capsys.readouterr().out.splitlines() == [
+        "Allowed: ['users:read']",
+        "Required: ['users:read']",
+        "Account returned: True",
+        "Username available: True",
+    ]
+    assert_account_request(nomad_http)
+
+
 @pytest.mark.parametrize("scenario", ["fixture", "custom_endpoint", "omitted", "empty", "invalid"])
 def test_json_setup(nomad_http, tmp_path, monkeypatch, scenario):
     import json
