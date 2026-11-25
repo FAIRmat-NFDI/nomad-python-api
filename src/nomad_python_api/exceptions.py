@@ -4,12 +4,14 @@ from ._scopes import Scope
 
 __all__ = [
     "AuthorizationError",
+    "BrowserAuthenticationError",
     "ClientAuthenticationError",
     "CredentialEndpointMismatchError",
     "HttpResponseError",
     "InvalidResponseError",
     "NomadError",
     "RateLimitError",
+    "ReauthenticationRequiredError",
     "ScopeNotAllowedError",
     "TransportError",
 ]
@@ -31,6 +33,14 @@ class ScopeNotAllowedError(NomadError):
 
 class CredentialEndpointMismatchError(NomadError):
     """The supplied credential is bound to a different deployment."""
+
+
+class BrowserAuthenticationError(NomadError):
+    """Interactive sign-in or communication with the identity service failed."""
+
+
+class ReauthenticationRequiredError(BrowserAuthenticationError):
+    """The caller must start a new interactive sign-in."""
 
 
 class HttpResponseError(NomadError):

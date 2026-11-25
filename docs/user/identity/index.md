@@ -1,12 +1,14 @@
 # Authentication
 
-Use a personal access token (PAT) for scripts, notebooks, and scheduled jobs. Sign in to the NOMAD deployment you want to use, open **User Settings → Tokens**, and create a PAT with `users:read` for the account check. Set `NOMAD_PAT` in your environment or have your secret manager supply it to the process. Use the token exactly as NOMAD issued it. [Create a PAT in NOMAD](https://docs.nomad-lab.eu/howto/manage/program/auth.html#create-a-pat)
+Use browser sign-in for an interactive script or local notebook. Use a personal access token (PAT) for unattended jobs and remote workers. To create a PAT for the account check, sign in to the deployment, open **User Settings → Tokens**, and grant `users:read`. Set `NOMAD_PAT` in your environment or have your secret manager supply it. [Create a PAT in NOMAD](https://docs.nomad-lab.eu/howto/manage/program/auth.html#create-a-pat)
+
+Omit `endpoint` on `NomadClient`, `BearerTokenCredential`, and `BrowserCredential` to use NOMAD Central. For a self-hosted NOMAD Oasis or a development or test deployment, pass its full HTTPS API v1 base URL as `endpoint` to both the client and credential.
 
 ## Check your account { #check-your-account }
 
 **REST endpoint used** · [`GET /users/me`](rest.md#get-users-me)
 
-`client.identity.me()` returns an `Account` with a user ID and an optional username. Creating the client and inspecting its scope policy require no network access. The account lookup makes one request.
+`client.identity.me()` returns an `Account` with a user ID and an optional username. Creating the client and inspecting its scope policy require no network access. Each account lookup makes one NOMAD API request. A browser credential may first need to sign in or refresh its access token.
 
 === "Named arguments"
 
@@ -32,11 +34,44 @@ Use a personal access token (PAT) for scripts, notebooks, and scheduled jobs. Si
     --8<-- "tests/snippets/identity/fixtures/nomad-settings.json"
     ```
 
-    Load the JSON with the Python standard library. Omitting `allowed_scopes` leaves the client without a local restriction. An empty array blocks scoped operations. An unknown scope name raises `ValueError`.
+    Load the JSON with the Python standard library. Omit `endpoint` for Central, or add the full HTTPS API v1 base URL for the deployment you want to use. Omitting `allowed_scopes` leaves the client without a local restriction. An empty array blocks scoped operations. An unknown scope name raises `ValueError`.
 
     ```python
     --8<-- "tests/snippets/identity/test_authentication.py:json_setup"
     ```
+
+## Sign in with your browser { #browser-login }
+
+**REST endpoints used** · [OIDC discovery, authorization, and token exchange](rest.md#browser-login-rest) · [`GET /users/me`](rest.md#get-users-me)
+
+=== "NOMAD Central"
+
+    NOMAD Central is the public deployment hosted by FAIRmat. The example passes `identity_provider="helmholtz-aai"` to open Helmholtz ID directly. Choose your institution there and finish signing in. Omit the provider alias to use the deployment's standard sign-in page. [NOMAD sign-in guide](https://docs.nomad-lab.eu/howto/manage/gui/account.html)
+
+    ```python
+    --8<-- "tests/snippets/identity/test_browser_login.py:central_browser_login"
+    ```
+
+=== "Self-hosted NOMAD Oasis"
+
+    Ask your Oasis administrator for the API URL, Keycloak issuer, public client ID, and optional provider alias. This example supplies the two Keycloak URLs directly and signs in before making the API request. [Oasis Keycloak setup](../../dev/oasis/index.md#configure-browser-login)
+
+    ```python
+    --8<-- "tests/snippets/identity/test_browser_login.py:oasis_browser_login"
+    ```
+
+Always supply `issuer` and `client_id`. Pass `discover=True` to fetch the authorization and token endpoints from the issuer, or supply both `authorization_endpoint` and `token_endpoint` explicitly. Both must use HTTPS on the issuer's origin. `identity_provider` is the alias configured in that Keycloak realm.
+
+The first allowed operation opens your system browser. Call `credential.authenticate()` if you want to open the browser first or start a fresh session. The credential keeps its tokens in memory and refreshes them when Keycloak issues a refresh token. `client.close()` closes the client's API connection pool. You can reuse the credential with another client on the same deployment.
+
+| Option | Default and usage |
+| --- | --- |
+| `login_timeout` | 180 seconds to complete sign-in in the browser. |
+| `refresh_margin` | Refresh up to 30 seconds before expiry, capped at half the token lifetime. |
+| `redirect_port`, `redirect_path` | An OS-assigned port (`0`) and `/`. Set these when the public client registration requires a particular callback. The listener binds to `127.0.0.1`. |
+| `ca_bundle` | HTTPX's default CA bundle for the credential's HTTPS calls. Supply a PEM bundle for a private issuer CA. Configure `NomadClient(ca_bundle=...)` separately when the API uses a private CA, and make sure the browser trusts the issuer's certificate. |
+
+Run browser login where Python and the browser can reach the same loopback interface, including a local Jupyter kernel. Use a scoped PAT for a remote kernel, a headless pyiron worker, or CI.
 
 ## Use an existing Keycloak access token
 
@@ -80,6 +115,8 @@ Run this example inside your open client context.
 | --- | --- |
 | `ScopeNotAllowedError` | The client's local policy blocked the call before HTTP. Use a client configured for the required scope. |
 | `CredentialEndpointMismatchError` | The SDK blocked the call before HTTP because the credential and client target different deployments. |
+| `BrowserAuthenticationError` | Check the issuer, public client and redirect registration, browser availability, or sign-in timeout. |
+| `ReauthenticationRequiredError` | Call `credential.authenticate()` to start a fresh browser sign-in, then retry the operation. |
 | `ClientAuthenticationError` (401) | Check whether the token is complete, expired, revoked, or issued by a different deployment. |
 | `AuthorizationError` (403) | Check the token's scopes and the account's access to the resource. |
 | `RateLimitError` (429) | Wait before issuing another request. |

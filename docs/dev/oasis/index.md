@@ -13,6 +13,15 @@ Start here if you maintain an Oasis, an institute-specific NOMAD deployment, or 
 
 The core SDK and the NOMAD server are separate projects. A change in an Oasis server fork affects what that server accepts. A change in the SDK controls the request your Python application sends and how it reads the response. For a federated Oasis, configure the API URL of the deployment you intend to call and use its credential. The client sends requests only to that configured deployment.
 
+## Configure browser login { #configure-browser-login }
+
+NOMAD Central is the public deployment hosted by FAIRmat. A self-hosted NOMAD Oasis can use Central's shared user management or a separate Keycloak realm. With a separate realm, configure the Oasis to trust it. You can manage users in that realm or configure SSO through an institutional identity provider. [Oasis user management](https://docs.nomad-lab.eu/develop/howto/oasis/configure.html#provide-and-connect-your-own-user-management)
+
+1. Register a public OpenID Connect client in the Keycloak realm used by the Oasis. Enable the standard authorization code flow and require PKCE `S256`.
+2. Allow the loopback redirect on that client. Configure the allowed `127.0.0.1` path and, if the registration specifies a fixed port, pass that port to the SDK. The default callback path is `/`, with a port selected by the operating system. [OAuth loopback redirects](https://www.rfc-editor.org/rfc/rfc8252.html#section-7.3)
+3. Give users the complete HTTPS Oasis API URL, the public HTTPS realm issuer, the client ID, and any optional provider alias configured in the realm. Provide the authorization and token URLs or tell users to enable discovery. [SDK example](../../user/identity/index.md#browser-login)
+4. From a machine with a local browser, run the SDK example and confirm that `client.identity.me()` returns the expected Oasis account. The account must be authorized on that Oasis.
+
 ## Trace a method to your Oasis
 
 1. Find the method in the user guide and follow **REST endpoint used** to the reference. It gives the wire path, method, scopes, request fields, and response mapping.
