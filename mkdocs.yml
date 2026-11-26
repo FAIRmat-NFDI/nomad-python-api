@@ -26,6 +26,7 @@ nav:
           - Access and scopes: user/identity/access.md
           - Accounts and users: user/identity/users.md
           - Groups: user/identity/groups.md
+          - Ownership transfers: user/identity/ownership-transfers.md
           - Personal access tokens: user/identity/pats.md
           - Reference:
               - Python API: user/identity/api.md

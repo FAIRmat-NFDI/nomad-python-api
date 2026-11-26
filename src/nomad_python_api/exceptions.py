@@ -13,6 +13,10 @@ __all__ = [
     "IdentityWriteOutcomeUnknownError",
     "InvalidResponseError",
     "NomadError",
+    "OwnershipTransferNotFoundError",
+    "OwnershipTransferNotPendingError",
+    "OwnershipTransferRequestError",
+    "OwnershipTransferOutcomeUnknownError",
     "PatNotFoundError",
     "PatRequestError",
     "PatWriteOutcomeUnknownError",
@@ -119,6 +123,31 @@ class GroupNotFoundError(HttpResponseError):
     """NOMAD could not find an accessible group."""
 
     _guidance = "Check the group ID, account, and deployment."
+
+
+class OwnershipTransferRequestError(HttpResponseError):
+    """NOMAD rejected an ownership-transfer request or target state."""
+
+
+class OwnershipTransferNotFoundError(HttpResponseError):
+    """NOMAD could not find an ownership transfer accessible to the caller."""
+
+    _guidance = "Check the transfer ID, resource type, account, and deployment."
+
+
+class OwnershipTransferNotPendingError(OwnershipTransferRequestError):
+    """The ownership transfer is no longer pending."""
+
+
+class OwnershipTransferOutcomeUnknownError(NomadError):
+    """An ownership-transfer write may have taken effect."""
+
+    def __init__(self, operation: str, status_code: int | None = None) -> None:
+        self.operation = operation
+        self.status_code = status_code
+        super().__init__(
+            f"The outcome of {operation} is unknown. Refresh the transfer and resource before another write."
+        )
 
 
 class IdentityWriteOutcomeUnknownError(NomadError):

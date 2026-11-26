@@ -11,6 +11,7 @@ from ._network import ConnectionLimits, NetworkTimeouts
 from ._scopes import Scope
 from .identity import BearerTokenCredential, BrowserCredential, PasswordCredential
 from .identity._operations import IdentityOperations
+from .ownership import OwnershipTransferOperations
 
 class NomadClient:
     """Use a bearer credential to call a NOMAD deployment.
@@ -46,12 +47,18 @@ class NomadClient:
             transport=transport,
             http_client=http_client,
         )
-        self._identity = IdentityOperations(self._pipeline)
+        self._ownership_transfers = OwnershipTransferOperations(self._pipeline)
+        self._identity = IdentityOperations(self._pipeline, self._ownership_transfers)
 
     @property
     def identity(self) -> IdentityOperations:
         """Operations on the identity associated with this credential."""
         return self._identity
+
+    @property
+    def ownership_transfers(self) -> OwnershipTransferOperations:
+        """Create, discover, and respond to ownership transfers."""
+        return self._ownership_transfers
 
     @property
     def allowed_scopes(self) -> frozenset[Scope] | None:

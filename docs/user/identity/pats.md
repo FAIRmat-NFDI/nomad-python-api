@@ -122,20 +122,6 @@ sort order. A listing with `limit` is for item iteration.
 --8<-- "tests/snippets/identity/test_pat_management.py:pat_pages"
 ```
 
-## Advanced Oasis extensions { #advanced-oasis-extensions }
-
-Suppose your self-hosted Oasis documents an extra `institute_tag`
-field for PAT creation and listing. Set `endpoint` to its API URL in
-the example. Use `extra_json` for the body field and `extra_query` for the
-query parameter.
-
-```python
---8<-- "tests/snippets/identity/test_pat_management.py:pat_oasis"
-```
-
-Check your deployment's REST contract for its supported extensions.
-Standard fields use the named SDK options.
-
 ## Diagnose an authorization error
 
 A PAT can authenticate `NomadClient` for job operations. PAT management

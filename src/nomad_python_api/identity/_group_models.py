@@ -1,9 +1,15 @@
+from __future__ import annotations
+
 from collections.abc import Mapping
 from enum import Enum
+from typing import TYPE_CHECKING
 
 from pydantic import BaseModel, ConfigDict, Field, PrivateAttr, StrictStr, model_validator
 
 from ._paging import Pagination
+
+if TYPE_CHECKING:
+    from ..ownership._operations import BoundOwnershipTransferOperations
 
 
 class GroupRole(str, Enum):
@@ -28,6 +34,7 @@ class Group(BaseModel):
 
     model_config = ConfigDict(frozen=True, hide_input_in_errors=True)
     _endpoint: str | None = PrivateAttr(default=None)
+    _ownership_transfers: BoundOwnershipTransferOperations | None = PrivateAttr(default=None)
 
     group_id: StrictStr = Field(min_length=1)
     name: StrictStr = "Default Group Name"
@@ -35,6 +42,23 @@ class Group(BaseModel):
     owner_id: StrictStr = Field(min_length=1, repr=False)
     member_ids: tuple[StrictStr, ...] | None = Field(default=None, repr=False)
     members: tuple[GroupMember, ...] | None = None
+
+    @property
+    def ownership_resource_type(self) -> str:
+        """Return the REST resource type used for ownership transfer."""
+        return "group"
+
+    @property
+    def ownership_resource_id(self) -> str:
+        """Return this group's transferable resource identifier."""
+        return self.group_id
+
+    @property
+    def ownership_transfers(self) -> BoundOwnershipTransferOperations:
+        """Return transfer operations bound to this group and client."""
+        if self._ownership_transfers is None:
+            raise RuntimeError("The group is not bound to a NOMAD client.")
+        return self._ownership_transfers
 
     @model_validator(mode="before")
     @classmethod

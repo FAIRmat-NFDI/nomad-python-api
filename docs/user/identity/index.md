@@ -25,6 +25,8 @@ to read your account, find users, manage groups, or manage personal access token
 - [Check access and scopes](access.md) to understand what the SDK and NOMAD permit.
 - [Work with accounts and users](users.md) to read your profile, find collaborators, or send an invitation.
 - [Manage groups](groups.md) and their membership roles.
+- [Transfer ownership](ownership-transfers.md) of groups and projects with
+  object chaining or explicit resource references.
 
 <span id="manage-pats"></span><span id="inspect-use-rotate-and-revoke"></span><span id="advanced-oasis-extensions"></span>
 

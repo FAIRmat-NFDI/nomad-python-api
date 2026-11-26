@@ -4,7 +4,11 @@
 
 ## Summary
 
-This reference covers client setup, credentials, permissions, accounts, users, groups, and personal access tokens. The [Identity guide](index.md#examples) has runnable examples. The [REST reference](rest.md) has request and response fields for the underlying HTTP endpoints.
+This reference covers client setup, credentials, permissions, accounts, users,
+groups, ownership transfers, and personal access tokens. The
+[Identity guide](index.md#examples) has runnable examples. The
+[REST reference](rest.md) has request and response fields for the underlying
+HTTP endpoints.
 
 <nav class="api-reference-nav" aria-label="Identity API sections">
   <a href="#client-reference"><strong>Clients</strong><span>Client options, connections, and timeouts</span></a>
@@ -12,6 +16,7 @@ This reference covers client setup, credentials, permissions, accounts, users, g
   <a href="#scope-and-error-reference"><strong>Access and scopes</strong><span>Permissions and exceptions</span></a>
   <a href="#account-reference"><strong>Accounts and users</strong><span>Profiles, account methods, and user lookup</span></a>
   <a href="#groups-reference"><strong>Groups</strong><span>Membership, roles, and listing</span></a>
+  <a href="#ownership-transfer-reference"><strong>Ownership transfers</strong><span>Projects, groups, and transfer actions</span></a>
   <a href="#pat-reference"><strong>Personal access tokens</strong><span>Creation, filtering, rotation, and data models</span></a>
 </nav>
 
@@ -30,6 +35,7 @@ This reference covers client setup, credentials, permissions, accounts, users, g
     | [`User`](#user) | Pydantic model | Holds an account profile for local use and export. |
     | [`UserOperations`](#users-reference) and [`GroupOperations`](#groups-reference) | Operation groups | Look up users and manage group membership. |
     | [`PatOperations`](#pat-operations) | Operation group class | Creates, lists, inspects, rotates, and revokes personal access tokens. |
+    | [`OwnershipTransferOperations`](#ownership-transfer-operations) | Operation group class | Creates, finds, and responds to resource ownership transfers. |
     | [PAT models](#pat-models) and [`PatList`](#pat-list-type) | Data models and iterable | Hold PAT options and results and provide lazy listing. |
     | [`Scope`](#scope) | Enum | Names the NOMAD permissions the Python SDK recognizes. |
 
@@ -85,6 +91,7 @@ Providing `pool_limits` or `ca_bundle` on a client that uses `transport` raises 
 | Property | Type | Description |
 | --- | --- | --- |
 | [`client.identity`](#client-identity) | [`IdentityOperations`](#identity-operations) | Read-only operation group. Accessing it is local. |
+| [`client.ownership_transfers`](#ownership-transfer-operations) | [`OwnershipTransferOperations`](#ownership-transfer-operations) | Read-only ownership-transfer operation group. Accessing it is local. |
 | [`client.allowed_scopes`](#client-allowed-scopes) | `frozenset[Scope]` or `None` | Read-only local scope policy. |
 
 ##### `client.identity` { #client-identity }
@@ -676,6 +683,121 @@ Offset-based resume uses the server's current sorted results.
 ```python
 --8<-- "tests/snippets/identity/test_users_and_groups.py:directory_create_group"
 ```
+
+## Ownership transfers { #ownership-transfer-reference .api-reference-section }
+
+### OwnershipTransferOperations class { #ownership-transfer-operations }
+
+Access this operation group through `client.ownership_transfers`. A loaded
+`Group` also exposes `group.ownership_transfers`, bound to that resource.
+Reading either property makes no request.
+
+| Instance method | Parameters | Returns | Required scopes |
+| --- | --- | --- | --- |
+| `create(request=None, *, resource=None, target=None, extra_json=None)` | A complete request, or one resource plus one target user. | [`OwnershipTransfer`](#ownership-transfer-model) | `uploads:read`, `uploads:write` |
+| `get(target=None, *, resource_type=None, direction="all", resource_id=None, state=None, extra_query=None)` | Optional transfer target or listing filters. | One `OwnershipTransfer`, or `list[OwnershipTransfer]` without a target. | `uploads:read` |
+| `accept(target, *, resource_type=None)` | One target or a sequence. | Action result or batch result. | `uploads:read`, `uploads:write` |
+| `refuse(target, *, resource_type=None)` | One target or a sequence. | Action result or batch result. | `uploads:read`, `uploads:write` |
+| `cancel(target, *, resource_type=None)` | One target or a sequence. | Action result or batch result. | `uploads:read`, `uploads:write` |
+| `get_operation_info(name)` | Unqualified method name. | `OperationInfo`; local lookup. | None |
+
+#### `create()` { #ownership-transfer-create }
+
+Use exactly one input style.
+
+| Parameter | Type | Required or default | Description |
+| --- | --- | --- | --- |
+| `request` | `OwnershipTransferCreateRequest` or matching mapping | `None` | Complete standard REST create body. Cannot be combined with `resource` or `target`. |
+| `resource` | `Group`, `OwnershipResourceRef`, compatible SDK object, or REST-shaped mapping | Required without `request` | Resource to transfer. Group mappings may use `group_id`; project mappings may use `upload_id`. |
+| `target` | `User`, `Account`, or mapping | Required without `request` | Select one user by `user_id`, `username`, or `email`. A raw user response containing `user_id` uses that stable ID. |
+| `extra_json` | `Mapping[str, object] \| None` | `None` | **Advanced Oasis extension.** Additional JSON fields documented by that deployment. Standard fields are reserved. |
+
+<strong class="api-reference-label">Returns</strong> A client-bound
+`OwnershipTransfer` from HTTP `200`.
+
+<strong class="api-reference-label">Raises</strong> `ValueError` for ambiguous
+or invalid local inputs, `OwnershipTransferRequestError` for rejected standard
+requests, and `OwnershipTransferOutcomeUnknownError` if a write result cannot
+be confirmed.
+
+#### `get()` { #ownership-transfer-get }
+
+With a transfer object, mapping, or ID, `get()` returns one transfer. A bare ID
+with no type is discovered across built-in project and group types. Pass an
+enum or raw resource-type string to avoid discovery. Listing filters cannot be
+combined with a target.
+
+With no target, `get()` returns a list. `resource_type=None` combines built-in
+`upload` and `group` listings and sorts by `updated_at` descending. `direction`
+accepts `OwnershipTransferDirection` or `"incoming"`, `"outgoing"`, or `"all"`.
+`resource_id` and `state` are optional strings. `extra_query` is an advanced
+deployment-extension mapping; standard query names are reserved.
+
+<strong class="api-reference-label">Raises</strong> `ValueError` for conflicting
+local inputs, `OwnershipTransferNotFoundError` when no selected type exposes
+the transfer, and `InvalidResponseError` for incompatible read responses.
+
+#### Action methods { #ownership-transfer-actions }
+
+`accept()`, `refuse()`, and `cancel()` accept an `OwnershipTransfer`, a mapping
+with `transfer_id` and optional `resource_type`, a transfer ID string, or a
+sequence of those forms. One target returns `OwnershipTransferActionResult`.
+A sequence runs in order, continues after failures, and returns
+`OwnershipTransferBatchResult`. Duplicate `(resource_type, transfer_id)` inputs
+raise `ValueError` before a request. With a bare ID and no explicit type, the
+SDK reads the transfer first to discover the type.
+
+HTTP `400` from an action raises `OwnershipTransferNotPendingError`. HTTP `404`
+raises `OwnershipTransferNotFoundError`. A transport failure, server failure,
+unexpected success status, or invalid success body raises
+`OwnershipTransferOutcomeUnknownError`; refresh state before another write.
+
+### Resource and request models
+
+#### `OwnershipResourceType` and `OwnershipResourceRef`
+
+`OwnershipResourceType.GROUP` has wire value `"group"` and
+`OwnershipResourceType.PROJECT` has wire value `"upload"`. Raw strings permit a
+deployment's future resource type. `OwnershipResourceRef` has required
+`resource_type` and `resource_id` strings, plus `group(group_id)` and
+`project(upload_id)` constructors.
+
+`OwnershipTransferCreateRequest` has four required strings:
+`resource_type`, `resource_id`, `target_user`, and `target_user_type`.
+`target_user_type` is `"user_id"`, `"username"`, or `"email"`.
+
+#### `OwnershipTransfer` { #ownership-transfer-model }
+
+| Field or method | Type | Description |
+| --- | --- | --- |
+| `transfer_id`, `resource_type`, `resource_id` | `str` | Required transfer and resource identifiers. |
+| `resource_name` | `str \| None` | Optional human-readable resource name. |
+| `source_user_id`, `target_user_id` | `str` | Required source and target account IDs. Hidden from `repr`. |
+| `requested_at`, `updated_at` | `datetime` | Required timestamps. |
+| `actor_user_id` | `str \| None` | Optional last actor ID. Hidden from `repr`. |
+| `accept()`, `refuse()`, `cancel()` | Methods | Act through the originating open client. Detached models raise `RuntimeError`. |
+
+The server response does not include a reliable state field. Filter by `state`
+when listing; do not infer state from the transfer model.
+
+#### `OwnershipTransferActionResult` { #ownership-transfer-action-result }
+
+The required fields are `transfer_id` and `resource_type`. `resource_id` and
+the raw `result` mapping are optional. `resource` is a local convenience: a
+successful group response containing `result.data` becomes a bound `Group`;
+other resource payloads remain available through `result` until SDK models exist.
+
+#### `OwnershipTransferBatchResult` { #ownership-transfer-batch-result }
+
+`succeeded` is an ordered tuple of action results. `failed` is an ordered tuple
+of `OwnershipTransferFailure`; each failure has the original `target` and its
+typed `error`.
+
+```python
+--8<-- "tests/snippets/identity/test_ownership_transfers.py:ownership_actions"
+```
+
+Expected output: `transfer-id-1 2 0`.
 
 ## Personal access tokens { #pat-reference .api-reference-section }
 

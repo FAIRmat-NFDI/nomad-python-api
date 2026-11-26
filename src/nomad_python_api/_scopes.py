@@ -10,6 +10,7 @@ class Scope(str, Enum):
     GROUPS_WRITE = "groups:write"
     GROUPS_DELETE = "groups:delete"
     UPLOADS_READ = "uploads:read"
+    UPLOADS_WRITE = "uploads:write"
     TOKENS_CREATE = "tokens:create"
     TOKENS_READ = "tokens:read"
     TOKENS_DELETE = "tokens:delete"
