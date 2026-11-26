@@ -44,6 +44,32 @@ def test_named_setup(nomad_http):
     assert_account_request(nomad_http)
 
 
+def test_me_profile(nomad_http):
+    nomad_http.respond = lambda request: httpx.Response(200, json={
+        "user_id": "example-id", "username": "demo", "name": "Demo User",
+        "affiliation": "Example institute",
+    })
+
+    # --8<-- [start:me_profile]
+    import os
+
+    from nomad_python_api import NomadClient
+    from nomad_python_api.identity import BearerTokenCredential
+
+    credential = BearerTokenCredential(os.environ["NOMAD_PAT"])
+    with NomadClient(credential=credential) as client:
+        me = client.identity.me()
+
+    print(me.user_id, me.name or me.username)
+    profile = me.as_user()
+    print(profile.affiliation)
+    # --8<-- [end:me_profile]
+    assert me.user_id == "example-id"
+    assert profile.name == "Demo User"
+    assert profile.affiliation == "Example institute"
+    assert_account_request(nomad_http)
+
+
 def test_configure_client_network_settings(nomad_http):
     # --8<-- [start:client_network_settings]
     import os

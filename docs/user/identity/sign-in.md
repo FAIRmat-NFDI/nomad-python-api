@@ -8,6 +8,8 @@ Create a PAT with `users:read` in **User Settings → Tokens**, then set `NOMAD_
 --8<-- "tests/snippets/identity/test_authentication.py:named_setup"
 ```
 
+See the [`me()` return value](api.md#me-returns) and [`Account` fields and methods](api.md#account) for what you can do with the returned profile.
+
 ## Advanced client options for workers
 
 Use a Python dictionary when a script builds the same client options for multiple

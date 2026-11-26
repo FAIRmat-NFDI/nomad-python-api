@@ -10,6 +10,7 @@ extra:
 extra_css:
   - stylesheets/extra.css
   - stylesheets/guide-switcher.css
+  - stylesheets/api-reference.css
 extra_javascript:
   - javascripts/guide-switcher.js
 nav:

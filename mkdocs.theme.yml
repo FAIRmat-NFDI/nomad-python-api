@@ -54,6 +54,7 @@ plugins:
 markdown_extensions:
   - attr_list
   - admonition
+  - pymdownx.details
   - pymdownx.highlight:
       anchor_linenums: true
   - pymdownx.inlinehilite
