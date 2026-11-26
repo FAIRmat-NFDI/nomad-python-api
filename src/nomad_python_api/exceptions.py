@@ -3,11 +3,14 @@
 from ._scopes import Scope
 
 __all__ = [
+    "AmbiguousUserError",
     "AuthorizationError",
     "BrowserAuthenticationError",
     "ClientAuthenticationError",
     "CredentialEndpointMismatchError",
+    "GroupNotFoundError",
     "HttpResponseError",
+    "IdentityWriteOutcomeUnknownError",
     "InvalidResponseError",
     "NomadError",
     "PatNotFoundError",
@@ -19,6 +22,7 @@ __all__ = [
     "ReauthenticationRequiredError",
     "ScopeNotAllowedError",
     "TransportError",
+    "UserNotFoundError",
 ]
 
 
@@ -101,6 +105,29 @@ class PatNotFoundError(HttpResponseError):
     """NOMAD could not find a PAT accessible to the caller."""
 
     _guidance = "Check the PAT ID, account, and deployment."
+
+
+class UserNotFoundError(NomadError):
+    """The exact user lookup returned no accessible user."""
+
+
+class AmbiguousUserError(NomadError):
+    """The exact selector matched more than one user."""
+
+
+class GroupNotFoundError(HttpResponseError):
+    """NOMAD could not find an accessible group."""
+
+    _guidance = "Check the group ID, account, and deployment."
+
+
+class IdentityWriteOutcomeUnknownError(NomadError):
+    """A user or group write may have taken effect."""
+
+    def __init__(self, operation: str, status_code: int | None = None) -> None:
+        self.operation = operation
+        self.status_code = status_code
+        super().__init__(f"The outcome of {operation} is unknown. Verify server state before another write.")
 
 
 class PatWriteOutcomeUnknownError(NomadError):

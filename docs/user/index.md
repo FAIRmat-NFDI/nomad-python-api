@@ -29,7 +29,7 @@ python -c "import nomad_python_api"
 
 After either install, use `import nomad_python_api` in your project code.
 
-See the [Authentication guide](identity/index.md) to connect to a deployment and check your account.
+See the [Identity guide](identity/index.md) to connect to a deployment and check your account.
 
 ## CLI
 

@@ -1,37 +1,33 @@
-from types import MappingProxyType
-
-from pydantic import ValidationError
-
-from .._core._operation import Operation, OperationInfo
+from .._core._operation import OperationInfo
 from .._core._pipeline import RequestPipeline
-from .._scopes import Scope
-from ..exceptions import InvalidResponseError
 from ._account import Account
+from ._groups import GroupOperations
 from ._pats import PatOperations
-from ._user import User
-
-_OPERATIONS = MappingProxyType({
-    "me": Operation(
-        OperationInfo(
-            "identity.me", "Get the authenticated NOMAD account.", frozenset({Scope.USERS_READ})
-        ),
-        method="GET",
-        path="/users/me",
-    ),
-})
+from ._users import _ME, UserOperations
 
 
 class IdentityOperations:
     """Operations on the identity associated with the client's credential."""
 
     def __init__(self, pipeline: RequestPipeline) -> None:
-        self._pipeline = pipeline
         self._pats = PatOperations(pipeline)
+        self._users = UserOperations(pipeline)
+        self._groups = GroupOperations(pipeline, self._users)
 
     @property
     def pats(self) -> PatOperations:
         """Manage the signed-in user's personal access tokens."""
         return self._pats
+
+    @property
+    def users(self) -> UserOperations:
+        """Find and invite users on this deployment."""
+        return self._users
+
+    @property
+    def groups(self) -> GroupOperations:
+        """List and manage groups on this deployment."""
+        return self._groups
 
     def get_operation_info(self, name: str) -> OperationInfo:
         """Return local metadata for an identity method, without a request.
@@ -42,19 +38,13 @@ class IdentityOperations:
         Raises:
             KeyError: If the method has no operation declaration.
         """
-        if name.startswith("pats."):
-            return self.pats.get_operation_info(name.removeprefix("pats."))
-        if name not in _OPERATIONS:
+        group, separator, method = name.partition(".")
+        if separator and group in {"pats", "users", "groups"}:
+            return getattr(self, group).get_operation_info(method)
+        if name != "me":
             raise KeyError("Unknown identity operation.")
-        return _OPERATIONS[name].info
+        return _ME.info
 
     def me(self) -> Account:
         """Get the account associated with the client's credential."""
-        data = self._pipeline.send(_OPERATIONS["me"])
-        try:
-            user = User.model_validate(data)
-        except ValidationError:
-            pass
-        else:
-            return Account._from_user(user, self.pats)
-        raise InvalidResponseError("identity.me returned an invalid account response.")
+        return Account._from_user(self._users._get_me(), self.pats)

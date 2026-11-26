@@ -1,12 +1,13 @@
 from datetime import datetime
 
-from pydantic import BaseModel, ConfigDict, Field, StrictBool, StrictStr
+from pydantic import BaseModel, ConfigDict, Field, PrivateAttr, StrictBool, StrictStr
 
 
 class User(BaseModel):
     """A NOMAD profile. Availability of optional fields depends on the operation."""
 
     model_config = ConfigDict(frozen=True, hide_input_in_errors=True)
+    _endpoint: str | None = PrivateAttr(default=None)
 
     user_id: StrictStr = Field(min_length=1, repr=False)
     username: StrictStr | None = Field(default=None, repr=False)
@@ -20,3 +21,19 @@ class User(BaseModel):
     repo_user_id: StrictStr | None = Field(default=None, repr=False)
     is_admin: StrictBool | None = None
     is_oasis_admin: StrictBool | None = None
+
+
+class UserInviteOptions(BaseModel):
+    """Account details used by NOMAD's invitation provider."""
+
+    model_config = ConfigDict(extra="forbid", frozen=True, hide_input_in_errors=True)
+
+    email: StrictStr = Field(min_length=1, repr=False)
+    username: StrictStr | None = Field(default=None, repr=False)
+    first_name: StrictStr | None = Field(default=None, repr=False)
+    last_name: StrictStr | None = Field(default=None, repr=False)
+    affiliation: StrictStr | None = Field(default=None, repr=False)
+    affiliation_address: StrictStr | None = Field(default=None, repr=False)
+    user_id: StrictStr | None = Field(default=None, repr=False)
+    repo_user_id: StrictStr | None = Field(default=None, repr=False)
+    created: datetime | None = None

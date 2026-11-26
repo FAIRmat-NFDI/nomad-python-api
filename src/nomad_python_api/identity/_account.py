@@ -33,11 +33,14 @@ class Account:
     def _from_user(cls, user: User, pats: PatOperations) -> Account:
         account = cls(**user.model_dump())
         object.__setattr__(account, "_pats_ref", ref(pats))
+        object.__setattr__(account, "_endpoint", user._endpoint)
         return account
 
     def as_user(self) -> User:
         """Return the same profile as a local, serializable User model."""
-        return User.model_validate(asdict(self))
+        user = User.model_validate(asdict(self))
+        user._endpoint = getattr(self, "_endpoint", None)
+        return user
 
     def get_all_pats(self, **options: object) -> PatList:
         """List this client's PATs using the originating client's credentials."""

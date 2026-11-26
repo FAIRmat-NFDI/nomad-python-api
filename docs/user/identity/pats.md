@@ -2,18 +2,25 @@
 
 Use a Keycloak access token to create, list, inspect, rotate, and revoke
 personal access tokens (PATs). Use a scoped PAT for a notebook or an
-unattended job. A job can read its own account with `users:read`, and
-NOMAD requires separate token-management permissions to manage PATs.
+unattended job.
 [NOMAD authentication guide](https://docs.nomad-lab.eu/howto/manage/program/auth.html#use-a-keycloak-access-token-when-required)
+
+| Action | Required scope |
+| --- | --- |
+| Read the signed-in account | `users:read` |
+| Create a PAT | `tokens:create` |
+| List or inspect PATs | `tokens:read` |
+| Rotate a PAT | `tokens:create` and `tokens:delete` |
+| Revoke a PAT | `tokens:delete` |
 
 ## Connect and check your account
 
 Set `NOMAD_KEYCLOAK_ACCESS_TOKEN` to a valid access token obtained through
-your deployment's sign-in flow. For NOMAD Central, leave `NOMAD_API_URL`
-unset. For a self-hosted NOMAD Oasis, set it to the complete HTTPS API v1 URL
-of the issuing deployment. You can also use a [browser credential](sign-in.md#browser-login)
-to acquire the access token interactively. Follow the examples below in
-the same session, then close the client.
+your deployment's sign-in flow. The examples use `endpoint = "prod"`
+for NOMAD Central. For a self-hosted NOMAD Oasis, replace that value with
+the issuing deployment's complete HTTPS API v1 URL. You can also use a [browser credential](sign-in.md#browser-login)
+to acquire the access token interactively. Each example opens and
+closes its own client.
 
 ```python
 --8<-- "tests/snippets/identity/test_pat_management.py:pat_client"
@@ -26,9 +33,13 @@ without calling NOMAD again.
 
 ## Create a PAT
 
-Choose the operations the job needs. The examples grant `users:read` for
-the account call and `uploads:read` for a job that also reads Project
-metadata. Pass enum members and scope strings together as needed.
+Choose the permissions the job needs. Pass enum members and scope
+strings together as needed.
+
+| Scope granted to the job PAT | What it lets the job do |
+| --- | --- |
+| `users:read` | Read its account profile |
+| `uploads:read` | Read Project metadata it can access |
 
 ```python
 --8<-- "tests/snippets/identity/test_pat_management.py:pat_create_object"
@@ -57,9 +68,10 @@ creation, last-use, and expiration bounds, as well as sorting.
 
 ## Inspect, use, rotate, and revoke { #inspect-use-rotate-and-revoke }
 
-Pass the issued PAT to `NomadClient` when the job runs. To rotate it,
-call `pats.rotate()` from the original session and pass the job credential
-that already carries the PAT ID. Revocation accepts metadata as well.
+The example creates a temporary PAT, uses it to check the job's account,
+rotates it, and revokes the replacement. The original Keycloak client
+manages the PAT. The job credential carries the PAT metadata ID so it
+can also identify the rotation target. Revocation accepts metadata as well.
 `delete()` is another name for `revoke()`.
 
 ```python
@@ -113,8 +125,9 @@ sort order. A listing with `limit` is for item iteration.
 ## Advanced Oasis extensions { #advanced-oasis-extensions }
 
 Suppose your self-hosted Oasis documents an extra `institute_tag`
-field for PAT creation and listing. Use `extra_json` for the top-level
-body field and `extra_query` for the query parameter.
+field for PAT creation and listing. Set `endpoint` to its API URL in
+the example. Use `extra_json` for the body field and `extra_query` for the
+query parameter.
 
 ```python
 --8<-- "tests/snippets/identity/test_pat_management.py:pat_oasis"
@@ -126,7 +139,9 @@ Standard fields use the named SDK options.
 ## Diagnose an authorization error
 
 A PAT can authenticate `NomadClient` for job operations. PAT management
-requires a Keycloak access token with the relevant scopes.
+requires a Keycloak access token with the scopes in the table above.
+To see how the SDK reports rejected PAT management, set `NOMAD_PAT`
+and replace the example `pat_id` with its metadata ID.
 `401` means NOMAD rejected the credential. `403` means NOMAD refused
 the action for the authenticated caller.
 
@@ -137,8 +152,9 @@ the action for the authenticated caller.
 See [PAT errors](api.md#pat-errors) for local policy, deployment
 mismatches, ambiguous write outcomes, and recovery.
 
-For rotation, check the client's local scope policy, the target's
-deployment and ID, and the server outcome.
+The next example attempts a rotation using a Keycloak access token.
+Replace `pat_id` with the metadata ID of a PAT you intend to replace.
+If the outcome is uncertain, reconcile it before making another write.
 
 ```python
 --8<-- "tests/snippets/identity/test_pat_management.py:pat_rotation_errors"

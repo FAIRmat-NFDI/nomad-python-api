@@ -37,7 +37,9 @@ def test_named_setup(nomad_http):
         credential=credential,
         allowed_scopes={Scope.USERS_READ},
     ) as client:
+        # Confirm which account the token belongs to.
         account = client.identity.me()
+        print(account.user_id)
     # --8<-- [end:named_setup]
 
     assert account.user_id == "example-id"
@@ -58,6 +60,7 @@ def test_me_profile(nomad_http):
 
     credential = BearerTokenCredential(os.environ["NOMAD_PAT"])
     with NomadClient(credential=credential) as client:
+        # Load the profile once and read its local fields below.
         me = client.identity.me()
 
     print(me.user_id, me.name or me.username)
@@ -77,6 +80,7 @@ def test_configure_client_network_settings(nomad_http):
     from nomad_python_api import ConnectionLimits, NetworkTimeouts, NomadClient
     from nomad_python_api.identity import BearerTokenCredential
 
+    # Tune the pool and timeouts for this client.
     credential = BearerTokenCredential(os.environ["NOMAD_PAT"])
     with NomadClient(
         credential=credential,
@@ -107,6 +111,7 @@ def test_basic_shared_transport(monkeypatch):
     from nomad_python_api.identity import BearerTokenCredential
 
     credential = BearerTokenCredential(os.environ["NOMAD_PAT"])
+    # Share one connection pool across both client lifetimes.
     with NomadTransport(pool_limits=ConnectionLimits(max_connections=4)) as transport:
         with NomadClient(credential=credential, transport=transport) as first:
             first_account = first.identity.me()
@@ -128,6 +133,7 @@ def test_basic_borrowed_http_client(nomad_http):
     from nomad_python_api.identity import BearerTokenCredential
 
     credential = BearerTokenCredential(os.environ["NOMAD_PAT"])
+    # Keep the caller-owned HTTP client open until all SDK calls finish.
     with httpx.Client(trust_env=False) as http_client:
         with NomadClient(credential=credential, http_client=http_client) as client:
             account = client.identity.me()
@@ -152,7 +158,8 @@ def test_share_a_transport(monkeypatch):
     from nomad_python_api import ConnectionLimits, NetworkTimeouts, NomadClient, NomadTransport
     from nomad_python_api.identity import BearerTokenCredential
 
-    endpoint = os.environ.get("NOMAD_API_URL", "prod")
+    # Use the same deployment for both credentials and share one pool.
+    endpoint = "prod"  # For an Oasis, use its full HTTPS API v1 URL.
     primary = BearerTokenCredential(os.environ["NOMAD_PAT"], endpoint=endpoint)
     secondary = BearerTokenCredential(os.environ["NOMAD_SECOND_PAT"], endpoint=endpoint)
     with NomadTransport(pool_limits=ConnectionLimits(max_connections=8)) as transport:
@@ -173,14 +180,9 @@ def test_share_a_transport(monkeypatch):
     assert transport.is_closed
 
 
-@pytest.mark.parametrize("proxy", [None, "http://proxy.example.edu:8080"])
-def test_borrow_a_custom_http_client(monkeypatch, caplog, proxy):
+def test_borrow_a_custom_http_client(monkeypatch, caplog):
     import httpx as test_httpx
 
-    monkeypatch.delenv("NOMAD_HTTPS_PROXY", raising=False)
-    monkeypatch.setenv("NOMAD_API_URL", _DEV_API)
-    if proxy is not None:
-        monkeypatch.setenv("NOMAD_HTTPS_PROXY", proxy)
     caplog.set_level("INFO", logger="research.nomad")
     requests = []
 
@@ -189,7 +191,7 @@ def test_borrow_a_custom_http_client(monkeypatch, caplog, proxy):
         return test_httpx.Response(200, json={"user_id": "example-id"})
 
     def create_client(**options):
-        assert options.pop("proxy") == proxy
+        assert options.pop("proxy") == "http://proxy.example.edu:8080"
         return original_client(transport=test_httpx.MockTransport(respond), **options)
 
     original_client = test_httpx.Client
@@ -209,12 +211,12 @@ def test_borrow_a_custom_http_client(monkeypatch, caplog, proxy):
     def record_status(response: httpx.Response) -> None:
         logger.info("NOMAD response status %d", response.status_code)
 
-    credential = BearerTokenCredential(
-        os.environ["NOMAD_PAT"],
-        endpoint=os.environ.get("NOMAD_API_URL", "prod"),
-    )
+    endpoint = "https://nomad-dev.example.org/api/v1"
+    proxy_url = "http://proxy.example.edu:8080"
+    credential = BearerTokenCredential(os.environ["NOMAD_PAT"], endpoint=endpoint)
+    # Configure the external client before passing it to the SDK.
     with httpx.Client(
-        proxy=os.environ.get("NOMAD_HTTPS_PROXY"),
+        proxy=proxy_url,
         limits=httpx.Limits(max_connections=8),
         timeout=httpx.Timeout(connect=5, pool=3, read=60, write=60),
         follow_redirects=False,
@@ -230,22 +232,18 @@ def test_borrow_a_custom_http_client(monkeypatch, caplog, proxy):
     assert caplog.messages == ["NOMAD response status 200"]
 
 
-@pytest.mark.parametrize("endpoint", [None, _DEV_API])
-def test_hpc_worker_setup(monkeypatch, nomad_http, endpoint):
-    monkeypatch.delenv("NOMAD_API_URL", raising=False)
-    if endpoint is not None:
-        monkeypatch.setenv("NOMAD_API_URL", endpoint)
-
+def test_hpc_worker_setup(nomad_http):
     # --8<-- [start:hpc_worker]
     import os
 
     from nomad_python_api import ConnectionLimits, NetworkTimeouts, NomadClient, Scope
     from nomad_python_api.identity import BearerTokenCredential
 
-    def check_worker_access():
+    # Construct the credential and client inside the worker process.
+    def check_worker_access(endpoint):
         credential = BearerTokenCredential(
             os.environ["NOMAD_PAT"],
-            endpoint=os.environ.get("NOMAD_API_URL", "prod"),
+            endpoint=endpoint,
         )
         with NomadClient(
             credential=credential,
@@ -255,11 +253,12 @@ def test_hpc_worker_setup(monkeypatch, nomad_http, endpoint):
         ) as client:
             return client.identity.me()
 
-    account = check_worker_access()
+    endpoint = "prod"  # For an Oasis, use its full HTTPS API v1 URL.
+    account = check_worker_access(endpoint)
     # --8<-- [end:hpc_worker]
 
     assert account.user_id == "example-id"
-    assert_account_request(nomad_http, endpoint or _API)
+    assert_account_request(nomad_http)
     assert nomad_http.client_options[0]["limits"].max_connections == 2
 
 
@@ -276,6 +275,7 @@ def test_dictionary_setup_and_local_discovery(nomad_http):
     }
 
     with NomadClient(**options) as client:
+        # Inspect operation metadata locally before making the API call.
         info = client.identity.get_operation_info("me")
         print(info.description)
         print([scope.value for scope in info.required_scopes])
@@ -297,6 +297,7 @@ def test_inspect_and_read_account(nomad_http, capsys):
 
     credential = BearerTokenCredential(os.environ["NOMAD_PAT"])
     with NomadClient(credential=credential, allowed_scopes={Scope.USERS_READ}) as client:
+        # Compare the client's policy with the operation's requirements.
         info = client.identity.get_operation_info("me")
         print("Allowed:", sorted(scope.value for scope in client.allowed_scopes or ()))
         print("Required:", sorted(scope.value for scope in info.required_scopes))
@@ -373,6 +374,7 @@ def test_keycloak_setup(nomad_http, monkeypatch):
     from nomad_python_api import NomadClient
     from nomad_python_api.identity import BearerTokenCredential
 
+    # Use the access token obtained by your sign-in application.
     credential = BearerTokenCredential(os.environ["NOMAD_KEYCLOAK_ACCESS_TOKEN"])
     with NomadClient(credential=credential) as client:
         account = client.identity.me()
@@ -382,20 +384,14 @@ def test_keycloak_setup(nomad_http, monkeypatch):
     assert_account_request(nomad_http)
 
 
-@pytest.mark.parametrize("with_private_ca", [False, True])
-def test_oasis_setup(nomad_http, monkeypatch, tmp_path, with_private_ca):
+def test_oasis_setup(nomad_http, monkeypatch):
     import ssl
     from unittest.mock import Mock
 
-    ca_path = tmp_path / "oasis-ca.pem"
     context = ssl.SSLContext(ssl.PROTOCOL_TLS_CLIENT)
     create_context = Mock(return_value=context)
     monkeypatch.setattr(ssl, "create_default_context", create_context)
     monkeypatch.setenv("OASIS_PAT", _TOKEN)
-    if with_private_ca:
-        monkeypatch.setenv("NOMAD_CA_BUNDLE", str(ca_path))
-    else:
-        monkeypatch.delenv("NOMAD_CA_BUNDLE", raising=False)
     # --8<-- [start:oasis_setup]
     import os
 
@@ -403,10 +399,12 @@ def test_oasis_setup(nomad_http, monkeypatch, tmp_path, with_private_ca):
     from nomad_python_api.identity import BearerTokenCredential
 
     endpoint = "https://oasis.example.org/nomad-oasis/api/v1"
+    ca_bundle = "oasis-ca.pem"  # Use None when the API uses a publicly trusted CA.
+    # Use a token issued by the same Oasis as the configured API URL.
     credential = BearerTokenCredential(os.environ["OASIS_PAT"], endpoint=endpoint)
     client = NomadClient(
         credential=credential,
-        ca_bundle=os.environ.get("NOMAD_CA_BUNDLE"),
+        ca_bundle=ca_bundle,
     )
     try:
         account = client.identity.me()
@@ -417,37 +415,32 @@ def test_oasis_setup(nomad_http, monkeypatch, tmp_path, with_private_ca):
     assert account.user_id == "example-id"
     assert_account_request(nomad_http, endpoint=endpoint)
     assert nomad_http.clients[0].is_closed
-    if with_private_ca:
-        create_context.assert_called_once_with(cafile=str(ca_path))
-    else:
-        create_context.assert_not_called()
+    create_context.assert_called_once_with(cafile="oasis-ca.pem")
 
 
 @pytest.mark.parametrize("scenario, expected", [
     ("success", ""),
-    ("blocked_scope", "This client blocks"),
     ("401", "Check the token value"),
     ("403", "Check the token's NOMAD scopes"),
 ])
 def test_error_recovery(nomad_http, scenario, expected, capsys):
-    import os
-
-    from nomad_python_api import NomadClient
-    from nomad_python_api.identity import BearerTokenCredential
-
-    credential = BearerTokenCredential(os.environ["NOMAD_PAT"], endpoint="prod")
-    allowed_scopes = set() if scenario == "blocked_scope" else None
     if scenario.isdigit():
         nomad_http.respond = lambda request: httpx.Response(int(scenario), text=_TOKEN)
 
-    with NomadClient(credential=credential, allowed_scopes=allowed_scopes) as client:
-        # --8<-- [start:error_recovery]
-        from nomad_python_api.exceptions import (
-            AuthorizationError,
-            ClientAuthenticationError,
-            ScopeNotAllowedError,
-        )
+    # --8<-- [start:error_recovery]
+    import os
 
+    from nomad_python_api import NomadClient, Scope
+    from nomad_python_api.exceptions import (
+        AuthorizationError,
+        ClientAuthenticationError,
+        ScopeNotAllowedError,
+    )
+    from nomad_python_api.identity import BearerTokenCredential
+
+    credential = BearerTokenCredential(os.environ["NOMAD_PAT"])
+    with NomadClient(credential=credential, allowed_scopes={Scope.USERS_READ}) as client:
+        # Report actionable errors without printing the token.
         try:
             account = client.identity.me()
         except ScopeNotAllowedError as error:
@@ -457,8 +450,8 @@ def test_error_recovery(nomad_http, scenario, expected, capsys):
             print("Check the token value, expiration, and issuing deployment.")
         except AuthorizationError:
             print("Check the token's NOMAD scopes and resource access.")
-        # --8<-- [end:error_recovery]
-    assert len(nomad_http.requests) == (0 if scenario == "blocked_scope" else 1)
+    # --8<-- [end:error_recovery]
+    assert len(nomad_http.requests) == 1
     output = capsys.readouterr().out
     assert output.startswith(expected)
     assert _TOKEN not in output
@@ -468,6 +461,7 @@ def test_error_recovery(nomad_http, scenario, expected, capsys):
 
 def test_raw_rest_account(nomad_http):
     # --8<-- [start:rest_account]
+    # Read the account directly with the same bearer authentication.
     import os
 
     import httpx
