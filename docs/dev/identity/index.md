@@ -13,6 +13,7 @@ classDiagram
     }
     class IdentityOperations {
         +me() Account
+        +pats PatOperations
         +get_operation_info(name) OperationInfo
     }
     class RequestPipeline {
@@ -22,6 +23,8 @@ classDiagram
     class BearerTokenCredential {
         -deployment URL
         -token
+        +pat_id
+        +from_issued()
     }
     class BrowserCredential {
         -deployment URL
@@ -42,6 +45,7 @@ classDiagram
     class Operation {
         +method
         +path
+        +success_status
     }
     class OperationInfo {
         +name
@@ -51,11 +55,28 @@ classDiagram
     class Account {
         +user_id
         +username
+        +as_user() User
+        +get_all_pats() PatList
+    }
+    class PatOperations {
+        +create(options) PatIssuedResult
+        +list() PatList
+        +get(target) PatMetadata
+        +rotate(target) PatIssuedResult
+        +revoke(target)
+    }
+    class PatIssuedResult {
+        +pat PatMetadata
+        -one-time secret
     }
     NomadClient *-- IdentityOperations : owns
     NomadClient *-- RequestPipeline : owns
     IdentityOperations --> RequestPipeline : uses
     IdentityOperations --> Operation : selects
+    IdentityOperations *-- PatOperations : owns
+    PatOperations --> RequestPipeline : uses
+    PatOperations ..> PatIssuedResult : issues
+    Account ..> PatOperations : delegates listing
     RequestPipeline --> BearerTokenCredential : asks for bearer token
     RequestPipeline --> BrowserCredential : asks for bearer token
     RequestPipeline --> PasswordCredential : asks for bearer token
@@ -66,6 +87,41 @@ classDiagram
 ```
 
 The `me` operation declaration in `identity/_operations.py` supplies both the required scope used by the pipeline and the metadata returned by `get_operation_info("me")`. The client initializes the pipeline with the credential's normalized API URL. Each credential still checks deployment binding before supplying a token. `identity/_account.py` holds the public result model.
+
+PAT management is registered in `identity/_pats.py`. The pipeline applies
+scope policy before token acquisition and keeps the method, encoded path,
+query, and JSON body separate. Each declaration supplies an accepted
+status. The shared pipeline handles bounded JSON and empty `204` replies.
+The PAT layer handles request, target, and uncertain-write errors.
+
+### PAT rotation sequence
+
+```mermaid
+sequenceDiagram
+    participant Researcher
+    participant Client as NomadClient
+    participant NOMAD
+    participant Job as NomadClient in the job
+    Researcher->>Client: rotate(job_credential)
+    Note over Client: Resolve PAT ID from the object locally
+    Client->>NOMAD: POST rotate with Keycloak access token
+    NOMAD->>NOMAD: Revoke old PAT and issue replacement
+    NOMAD-->>Client: Replacement metadata and one-time secret
+    Client-->>Researcher: PatIssuedResult
+    Researcher->>Job: Use a new BearerTokenCredential
+```
+
+The PAT management call sends the client's access token and the target's
+metadata ID. Only the job credential carries the target secret. Write calls
+have a single attempt. A response that cannot confirm the outcome requires
+checking server state before another attempt.
+
+`Account` holds a weak reference to the originating PAT operations for
+`get_all_pats()`. Serialization omits that connection. PAT listing is lazy.
+It reapplies the same validated filters and uses only opaque continuation
+cursors against the configured deployment. It never follows server-provided
+pagination URLs. The [REST reference](../../user/identity/rest.md#pat-rest)
+describes the request fields and extension points.
 
 ## Request sequence
 

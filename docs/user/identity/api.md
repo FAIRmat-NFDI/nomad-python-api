@@ -47,7 +47,7 @@ NomadClient(
 
 #### Connection ownership and configuration
 
-Start with the default client. Choose a borrowed connection setup when the [advanced use cases](index.md#share-or-borrow-http-connections) apply.
+Start with the default client. Choose a borrowed connection setup when the [advanced use cases](connections.md#share-or-borrow-http-connections) apply.
 
 | Mode | Configure pool and CA trust on | Configure API timeouts on | Close the pool with |
 | --- | --- | --- | --- |
@@ -55,7 +55,7 @@ Start with the default client. Choose a borrowed connection setup when the [adva
 | Shared transport | `NomadTransport` | Each `NomadClient` | `NomadTransport.close()` or its outer context manager |
 | Existing HTTPX client | The HTTPX client or its transport | The HTTPX client | The HTTPX client's `close()` or its outer context manager |
 
-Providing `pool_limits` or `ca_bundle` on a client that uses `transport` raises `ValueError`. A closed injected object also raises `ValueError` during construction. See [when to choose each mode](index.md#tune-network-settings).
+Providing `pool_limits` or `ca_bundle` on a client that uses `transport` raises `ValueError`. A closed injected object also raises `ValueError` during construction. See [when to choose each mode](connections.md#tune-network-settings).
 
 ### Properties
 
@@ -121,7 +121,7 @@ These limits apply to individual phases of the API request. Values above Python'
 
 !!! info "Advanced · Optional"
 
-    Use this separate object when several sessions in one process need the same connection budget. For one client, [configure the SDK-owned pool directly](index.md#tune-network-settings).
+    Use this separate object when several sessions in one process need the same connection budget. For one client, [configure the SDK-owned pool directly](connections.md#tune-network-settings).
 
 Import from `nomad_python_api`. Use a context manager or call `close()` after all borrowing clients finish. The pool is shared within a process. Each borrowing client keeps its own HTTP session, cookies, credential, and scope policy.
 
@@ -137,7 +137,7 @@ Import from `nomad_python_api`. Use a context manager or call `close()` after al
 
 ## Borrowed HTTPX client { #borrowed-httpx-client }
 
-See the [worked network examples](index.md#share-or-borrow-http-connections). NOMAD borrows the HTTPX client's connection pool, proxy, TLS settings, timeouts, and hooks. The SDK constructs its own headers and query parameters and disables automatic redirects. The borrowed client's default headers, cookies, query parameters, and authentication stay with the application's own requests. Credential exchanges use their own network settings.
+See the [worked network examples](connections.md#share-or-borrow-http-connections). NOMAD borrows the HTTPX client's connection pool, proxy, TLS settings, timeouts, and hooks. The SDK constructs its own headers and query parameters and disables automatic redirects. The borrowed client's default headers, cookies, query parameters, and authentication stay with the application's own requests. Credential exchanges use their own network settings.
 
 ### Response cookies { #borrowed-httpx-response-cookies }
 
@@ -158,13 +158,19 @@ Import from `nomad_python_api.identity`. Holds an existing token for one deploym
 ### Constructor
 
 ```python
-BearerTokenCredential(token: str, *, endpoint: str = "prod")
+BearerTokenCredential(token: str, *, endpoint: str = "prod", pat_id: str | None = None)
 ```
 
 | Parameter | Type | Required | Default | Description |
 | --- | --- | --- | --- | --- |
 | `token` | `str` | Yes | — | The PAT or Keycloak access token, without the `Bearer` prefix or whitespace. |
 | `endpoint` | `str` | No | `"prod"` | Keyword-only. Central or a complete HTTPS NOMAD API v1 base URL. |
+| `pat_id` | `str \| None` | No | `None` | Metadata ID for referring to this PAT from a management call. |
+
+The read-only `pat_id` property exposes the optional metadata ID.
+`BearerTokenCredential.from_issued(issued)` creates a credential from a
+[`PatIssuedResult`](#pat-models) and keeps the issuing deployment and metadata
+ID with it. See the [PAT lifecycle example](pats.md#inspect-use-rotate-and-revoke).
 
 ### Worked example: look up your account with a PAT
 
@@ -174,7 +180,7 @@ Set `NOMAD_PAT` to a Central PAT with `users:read`.
 --8<-- "tests/snippets/identity/test_authentication.py:named_setup"
 ```
 
-`account.user_id` contains the ID of the token's NOMAD account. The guide also shows how to [use an existing Keycloak access token](index.md#use-an-existing-keycloak-access-token).
+`account.user_id` contains the ID of the token's NOMAD account. The guide also shows how to [use an existing Keycloak access token](sign-in.md#use-an-existing-keycloak-access-token).
 
 ## BrowserCredential class { #browser-credential }
 
@@ -240,7 +246,7 @@ Run the example on a computer where Python and the browser share a loopback inte
 --8<-- "tests/snippets/identity/test_browser_login.py:central_browser_login"
 ```
 
-After sign-in, `account` contains your Central account. For a custom installation, see the [Oasis browser example](index.md#browser-login). The [REST reference](rest.md#browser-login-rest) lists the messages exchanged during sign-in.
+After sign-in, `account` contains your Central account. For a custom installation, see the [Oasis browser example](sign-in.md#browser-login). The [REST reference](rest.md#browser-login-rest) lists the messages exchanged during sign-in.
 
 ## PasswordCredential class { #password-credential }
 
@@ -281,11 +287,13 @@ Set `NOMAD_USERNAME` and `NOMAD_PASSWORD` for an account that can use the deploy
 --8<-- "tests/snippets/identity/test_password_login.py:central_password_login"
 ```
 
-The first call signs in and returns the account. See the [Oasis password example](index.md#password-login) for explicit arguments and the [REST reference](rest.md#password-login-rest) for the token exchange.
+The first call signs in and returns the account. See the [Oasis password example](sign-in.md#password-login) for explicit arguments and the [REST reference](rest.md#password-login-rest) for the token exchange.
 
 ## IdentityOperations class { #identity-operations }
 
 Access this operation group through the `client.identity` property.
+
+`client.identity.pats` is the [PAT operation group](#pat-operations).
 
 ### Instance methods
 
@@ -304,7 +312,7 @@ Returns the `OperationInfo` registered for an operation. An unknown name raises 
 
 | Parameter | Type | Required | Default | Description |
 | --- | --- | --- | --- | --- |
-| `name` | `str` | Yes | — | Identity method name, such as `"me"`. |
+| `name` | `str` | Yes | — | Identity method name, such as `"me"` or `"pats.rotate"`. |
 
 ### Worked example: check scopes and read the account { #worked-account-lookup }
 
@@ -327,7 +335,93 @@ Import from `nomad_python_api.identity`. An immutable model returned by `client.
 | `user_id` | `str` | Yes | — | NOMAD account identifier. |
 | `username` | `str` or `None` | No | `None` | Username, when returned by the deployment. |
 
-The [worked account lookup](#worked-account-lookup) reads both fields from the result of `me()`.
+Optional profile fields are keyword-only and default to `None`. These include
+`name`, `first_name`, `last_name`, `email`, `affiliation`,
+`affiliation_address`, and `repo_user_id` as strings, `created` as
+`datetime`, and `is_admin` and `is_oasis_admin` as booleans.
+The [REST field table](rest.md#get-users-me) describes each field.
+
+`account.as_user()` returns a local Pydantic `User` with the same profile
+attributes. Use `model_dump(mode="json")` for an explicit JSON-compatible
+profile export. Account profiles may contain private information.
+
+`account.get_all_pats(**options)` delegates to [`pats.list()`](#pat-list)
+using the originating client. It raises `RuntimeError` for a detached
+account or a closed client.
+
+### PatOperations class { #pat-operations }
+
+Access the operation group through `client.identity.pats`. PAT management uses
+the authenticated user's management access token from the same deployment.
+
+| Instance method | Required inputs | Return type | REST contract |
+| --- | --- | --- | --- |
+| `create(options, *, extra_json=None)` | `PatCreateOptions` or a Python mapping with its fields | `PatIssuedResult` | [Create](rest.md#create-pat) |
+| `list(*, limit=None, extra_query=None, **filters)` | None | `PatList` | [List](rest.md#list-pats) |
+| `get(target)` | A PAT metadata ID string, `PatMetadata`, or `BearerTokenCredential` with a PAT ID | `PatMetadata` | [Get](rest.md#get-pat) |
+| `rotate(target)` | Same target forms as `get()` | `PatIssuedResult` | [Rotate](rest.md#rotate-pat) |
+| `revoke(target)`, `delete(target)` | Same target forms as `get()` | `None` | [Revoke](rest.md#revoke-pat) |
+| `get_operation_info(name)` | Method name as `str` | `OperationInfo` | Local metadata. Unknown names raise `KeyError`. |
+
+`extra_json` is an optional mapping of custom top-level body fields.
+`extra_query` is an optional mapping of custom query fields.
+The [worked lifecycle](pats.md#manage-pats) covers typed options and reusable dictionaries,
+access and rotation, and Oasis extensions.
+
+With a Keycloak access token on the client, bind `pats = client.identity.pats`
+and issue a PAT using typed options. The example prints metadata and expiry.
+
+```python
+--8<-- "tests/snippets/identity/test_pat_management.py:pat_create_object"
+```
+
+#### Listing and filtering { #pat-list }
+
+All options are optional. Leaving a REST option unset uses NOMAD's
+defaults. `.filter(**filters)` accepts the filter fields in the first
+four rows. It returns a new listing and raises `ValueError` if a field
+already has a different value.
+
+| Options | Type | Default and behavior |
+| --- | --- | --- |
+| `search` | `str` | Case-insensitive search by token name. |
+| `state` | `"active"` or `"inactive"` | Filter by whether the PAT is currently active. |
+| `revoked` | `bool` | Filter by explicit revocation. |
+| `created_after`, `created_before`, `last_used_after`, `last_used_before`, `expires_after`, `expires_before` | `datetime` or ISO 8601 string | Filter the corresponding dates. Include the timezone for reproducible runs. |
+| `order_by` | `str` | Server default is `"created_desc"`. Select `created`, `expires`, `last_used`, or `name` with an `_asc` or `_desc` suffix. |
+| `order` | `"asc"` or `"desc"` | Server default is `"asc"`. |
+| `limit` | Nonnegative `int` | SDK cap on total items yielded. `0` makes no request. |
+| `page_size` | Nonnegative `int` | Server default is `10`. `0` allows reading page metadata without items. |
+| `page_after_value`, `page`, `page_offset` | Cursor `str`, 1-based `int`, or 0-based `int` | Starting position. Supply at most one. |
+
+Iterate a `PatList` for items. A new iteration starts a new listing.
+Call `by_page(continuation_token=None)` for an iterator of `PatPage`.
+Supply a saved cursor or a starting position. `PatPage.items` is a tuple
+of metadata records, `.query` is a `PatFilters` snapshot, `.pagination`
+is a `PatPagination` model, and `.next_cursor` is a string or `None`.
+`PatPagination` exposes the server pagination fields listed in the
+[REST reference](rest.md#list-pats), including the total match count.
+
+#### PAT models { #pat-models }
+
+| Model | Fields |
+| --- | --- |
+| `PatCreateOptions` | Required `name: str` and `scopes: tuple[str, ...]`. Scope enum members are accepted as input. Optional `description: str \| None` defaults to `None`. Optional `expires_in_days: int \| None` has a model default of 30, and the API request omits an unset value. |
+| `PatMetadata` | Required `id`, `name`, and `scopes` (string tuple), `revoked: bool`, and `created_at: datetime`. Optional `description`, `expired_at`, and `last_used_at` default to `None`. The two optional timestamps are `datetime` when supplied. |
+| `PatIssuedResult` | Required `pat: PatMetadata` and `raw_token: SecretStr`. Use `BearerTokenCredential.from_issued()` to use the result for a job. The secret is excluded from default representation and model serialization. Pickling is disabled. |
+
+#### PAT errors { #pat-errors }
+
+| Error | When to expect it | What to check |
+| --- | --- | --- |
+| `ScopeNotAllowedError` | The caller's local policy blocks the request. | Include the operation's documented scopes in `allowed_scopes`. NOMAD also checks the access token. |
+| `ClientAuthenticationError`, `AuthorizationError` | HTTP `401` or `403`, respectively. | Check token validity and deployment for `401`. Use a management access token with the required scopes for `403`. |
+| `CredentialEndpointMismatchError` | A credential or returned metadata identifies a different deployment. | Connect to the issuing deployment. |
+| `ValueError` | Invalid options, missing PAT metadata ID, conflicting filters, or an extension collision. | Use the fields described above. |
+| `PatRequestError`, `PatNotFoundError` | HTTP `400` or `422`, or a target `404`, respectively. | Inspect supported options, target ID, active state, and account. |
+| `RateLimitError`, `PoolTimeoutError` | HTTP `429` or a confirmed unsent pool wait timeout. | Let concurrent work settle and review the pool or request rate. |
+| `InvalidResponseError` | Read response cannot be interpreted or returns a repeated cursor. | Check deployment compatibility before continuing. |
+| `PatWriteOutcomeUnknownError` | A write may have succeeded before the response was lost or could be interpreted. | Inspect the PAT list in NOMAD before attempting another write. |
 
 ### OperationInfo class { #operation-info }
 
@@ -348,6 +442,10 @@ Import from `nomad_python_api`. `Scope` is a string enum. Use `list(Scope)` to l
 | Enum member | Value | Description |
 | --- | --- | --- |
 | `Scope.USERS_READ` | `"users:read"` | Permission required to read the authenticated account. |
+| `Scope.UPLOADS_READ` | `"uploads:read"` | Permission to read Project data under NOMAD's upload API. |
+| `Scope.TOKENS_CREATE` | `"tokens:create"` | Management permission for issuing a PAT. |
+| `Scope.TOKENS_READ` | `"tokens:read"` | Management permission for listing and inspecting PATs. |
+| `Scope.TOKENS_DELETE` | `"tokens:delete"` | Management permission for revoking a PAT. Rotation also requires create. |
 
 The [worked account lookup](#worked-account-lookup) uses `Scope.USERS_READ` to set the local policy and reads `scope.value` to display the permission name.
 
@@ -369,7 +467,10 @@ Import these exception classes from `nomad_python_api.exceptions`. Catch `NomadE
 | `RateLimitError` | `HttpResponseError` | NOMAD returned HTTP 429. Wait before trying again. |
 | `TransportError` | `NomadError` | The API transport failed or timed out. Check connectivity and certificate trust. |
 | `PoolTimeoutError` | `TransportError` | The data request timed out before it acquired a connection. Review client concurrency and the pool wait budget. |
-| `InvalidResponseError` | `NomadError` | The API response could not be interpreted as the expected account. |
+| `InvalidResponseError` | `NomadError` | The API read response could not be interpreted as the expected model. |
+| `PatRequestError` | `HttpResponseError` | NOMAD rejected the PAT request or target state. |
+| `PatNotFoundError` | `HttpResponseError` | NOMAD could not find a PAT accessible to the caller. |
+| `PatWriteOutcomeUnknownError` | `NomadError` | Verify the result in NOMAD before repeating a PAT write. |
 
 ### Worked example: handle scope and authentication errors
 

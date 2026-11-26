@@ -1,10 +1,14 @@
 from types import MappingProxyType
 
+from pydantic import ValidationError
+
 from .._core._operation import Operation, OperationInfo
 from .._core._pipeline import RequestPipeline
 from .._scopes import Scope
 from ..exceptions import InvalidResponseError
 from ._account import Account
+from ._pats import PatOperations
+from ._user import User
 
 _OPERATIONS = MappingProxyType({
     "me": Operation(
@@ -22,6 +26,12 @@ class IdentityOperations:
 
     def __init__(self, pipeline: RequestPipeline) -> None:
         self._pipeline = pipeline
+        self._pats = PatOperations(pipeline)
+
+    @property
+    def pats(self) -> PatOperations:
+        """Manage the signed-in user's personal access tokens."""
+        return self._pats
 
     def get_operation_info(self, name: str) -> OperationInfo:
         """Return local metadata for an identity method, without a request.
@@ -32,6 +42,8 @@ class IdentityOperations:
         Raises:
             KeyError: If the method has no operation declaration.
         """
+        if name.startswith("pats."):
+            return self.pats.get_operation_info(name.removeprefix("pats."))
         if name not in _OPERATIONS:
             raise KeyError("Unknown identity operation.")
         return _OPERATIONS[name].info
@@ -39,13 +51,10 @@ class IdentityOperations:
     def me(self) -> Account:
         """Get the account associated with the client's credential."""
         data = self._pipeline.send(_OPERATIONS["me"])
-        if isinstance(data, dict):
-            user_id = data.get("user_id")
-            username = data.get("username")
-            if (
-                isinstance(user_id, str)
-                and user_id
-                and (username is None or isinstance(username, str))
-            ):
-                return Account(user_id, username)
+        try:
+            user = User.model_validate(data)
+        except ValidationError:
+            pass
+        else:
+            return Account._from_user(user, self.pats)
         raise InvalidResponseError("identity.me returned an invalid account response.")

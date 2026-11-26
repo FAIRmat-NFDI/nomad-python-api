@@ -19,3 +19,4 @@ class Operation:
     info: OperationInfo
     method: str
     path: str
+    success_status: int = 200
