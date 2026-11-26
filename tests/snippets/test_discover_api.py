@@ -15,6 +15,13 @@ import pytest
             "NetworkTimeouts: Set timeouts in seconds for the individual API network phases.\n"
             "NomadClient: Use a bearer credential to call a NOMAD deployment.\n"
             "NomadTransport: Own a connection pool that several NOMAD clients can borrow.\n"
+                "OwnershipResourceRef: An explicit transferable resource type and identifier.\n"
+                "OwnershipResourceType: Built-in NOMAD resource types that support ownership transfer.\n"
+                "OwnershipTransfer: A transfer request returned by NOMAD and bound to its originating client.\n"
+                "OwnershipTransferActionResult: The confirmed response from accepting, refusing, or cancelling a transfer.\n"
+                "OwnershipTransferBatchResult: Ordered successes and failures from a sequential bulk action.\n"
+                "OwnershipTransferCreateRequest: The standard NOMAD ownership-transfer creation body.\n"
+                "OwnershipTransferDirection: Relationship of a transfer to the authenticated user.\n"
             "Scope: NOMAD permission names used by this SDK.\n",
         ),
     ],

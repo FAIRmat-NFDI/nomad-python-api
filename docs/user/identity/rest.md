@@ -116,6 +116,99 @@ SDK's `members` as `None`. The API returns HTTP `404` for an unavailable
 group. The SDK retains authentication, authorization, validation, and
 uncertain write errors. [NOMAD group contract](https://docs.nomad-lab.eu/reference/api.html#user-groups)
 
+## Ownership transfers { #ownership-transfer-rest }
+
+The current NOMAD contract supports `resource_type="upload"` for projects and
+`resource_type="group"` for groups. It applies `uploads:read` to reads and both
+`uploads:read` and `uploads:write` to writes for either type.
+
+| SDK method | REST request | Success |
+| --- | --- | --- |
+| `ownership_transfers.get()` without a target | `GET /ownership-transfers` | `200` with `transfers`. |
+| `ownership_transfers.get(target)` | `GET /ownership-transfers/{transfer_id}` | `200` with one transfer. |
+| `ownership_transfers.create(...)` | `POST /ownership-transfers` | `200` with the pending transfer. |
+| `transfer.accept()` | `POST /ownership-transfers/{transfer_id}/respond` | `200` action result. |
+| `transfer.refuse()` | Same respond route | `200` action result. |
+| `transfer.cancel()` | `POST /ownership-transfers/{transfer_id}/cancel` | `200` action result. |
+
+### List and get requests
+
+The list query contains `resource_type` and optional `direction`, `resource_id`,
+and `state`. Direction is `incoming`, `outgoing`, or `all`. Get-by-ID and every
+action require the `resource_type` query parameter because transfer IDs do not
+identify the resource collection on their own.
+
+HTTP `200` listing bodies contain `transfers`, an array of these records:
+
+| Field | Type | Required by SDK |
+| --- | --- | --- |
+| `transfer_id`, `resource_type`, `resource_id` | String | Yes |
+| `resource_name` | String or null | No |
+| `source_user_id`, `target_user_id` | String | Yes |
+| `requested_at`, `updated_at` | Date-time string | Yes |
+| `actor_user_id` | String or null | No |
+
+The record has no dependable state field. Use the list's `state` query filter.
+
+### Create body
+
+```json
+{
+  "resource_type": "group",
+  "resource_id": "group-id-1",
+  "target_user": "email1@example.org",
+  "target_user_type": "email"
+}
+```
+
+All four fields are required strings. `target_user_type` is `user_id`,
+`username`, or `email`. The source account is determined from the bearer token.
+Creating a transfer does not cause or simulate acceptance by the target.
+
+### Action bodies and results
+
+Accept sends `{"action": "accept"}` and refuse sends
+`{"action": "refuse"}`. Cancel has no request body. A successful response
+contains required `transfer_id` and `resource_type`, optional `resource_id`,
+and optional `result`. For a group acceptance, `result.data` can contain the
+updated group, which the SDK maps to `OwnershipTransferActionResult.resource`.
+
+HTTP `400` commonly means that an action target is not pending. HTTP `404`
+means the transfer is not accessible for the selected resource type. For a
+write, `5xx`, transport failure, unexpected success status, or an invalid
+success body leaves the outcome uncertain.
+
+## Oasis REST extensions { #oasis-rest-extensions }
+
+!!! info "Advanced deployment compatibility"
+
+    Use extension arguments only for fields documented by the connected Oasis.
+    Standard NOMAD fields always use named SDK parameters or typed models.
+
+Several read operations accept `extra_query`; write operations that can safely
+support deployment additions accept `extra_json`. The SDK reserves standard
+field names, validates JSON-compatible values, and sends extensions only to the
+configured deployment. Extensions do not bypass scope or authorization checks.
+
+This example represents an Oasis that documents an `institute_tag` field for
+PAT creation and listing:
+
+```python
+--8<-- "tests/snippets/identity/test_pat_management.py:pat_oasis"
+```
+
+Expected output for the documented fixture values:
+
+```text
+Diffraction analysis
+Pass state as a named filter.
+```
+
+For ownership transfers, `create(..., extra_json={...})` adds documented custom
+create fields. `get(..., extra_query={...})` adds documented custom list or get
+query fields. Do not copy arbitrary browser payloads into these mappings; check
+the Oasis OpenAPI schema and keep secrets out of query strings.
+
 ## PAT management { #pat-rest }
 
 All five routes use the current user's management access token as
@@ -148,7 +241,7 @@ It has no path or query fields. The JSON request body accepts the following.
 ```
 
 On a deployment that documents an extra top-level field, pass it
-through `extra_json`. See the [worked Oasis example](pats.md#advanced-oasis-extensions).
+through `extra_json`. See the [Oasis extension reference](#oasis-rest-extensions).
 
 ### GET /auth/pats { #list-pats }
 

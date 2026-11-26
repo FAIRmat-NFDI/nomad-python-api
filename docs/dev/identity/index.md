@@ -8,6 +8,7 @@
 classDiagram
     class NomadClient {
         +identity
+        +ownership_transfers
         +allowed_scopes
         +close()
     }
@@ -71,8 +72,24 @@ classDiagram
         +pat PatMetadata
         -one-time secret
     }
+    class OwnershipTransferOperations {
+        +create(resource, target) OwnershipTransfer
+        +get(target, filters) OwnershipTransfer or list
+        +accept(target) ActionResult
+        +refuse(target) ActionResult
+        +cancel(target) ActionResult
+    }
+    class OwnershipTransfer {
+        +transfer_id
+        +resource_type
+        +resource_id
+        +accept()
+        +refuse()
+        +cancel()
+    }
     NomadClient *-- IdentityOperations : owns
     NomadClient *-- RequestPipeline : owns
+    NomadClient *-- OwnershipTransferOperations : owns
     IdentityOperations --> RequestPipeline : uses
     IdentityOperations --> Operation : selects
     IdentityOperations *-- PatOperations : owns
@@ -82,6 +99,10 @@ classDiagram
     PatOperations --> RequestPipeline : uses
     PatOperations ..> PatIssuedResult : issues
     Account ..> PatOperations : delegates listing
+    OwnershipTransferOperations --> RequestPipeline : uses
+    OwnershipTransferOperations ..> OwnershipTransfer : binds
+    GroupOperations ..> OwnershipTransferOperations : binds returned groups
+    OwnershipTransfer ..> OwnershipTransferOperations : delegates actions
     RequestPipeline --> BearerTokenCredential : asks for bearer token
     RequestPipeline --> BrowserCredential : asks for bearer token
     RequestPipeline --> PasswordCredential : asks for bearer token
@@ -163,6 +184,39 @@ bound to their deployment. Group and PAT listings share cursor traversal
 and keep their own filter and response models. The transport bounds responses
 and leaves membership authorization to the server. Replacement sends a full
 list. An uncertain write needs reconciliation on the server before any retry.
+
+### Ownership-transfer lifecycle
+
+```mermaid
+sequenceDiagram
+    participant Source
+    participant SourceClient as Source NomadClient
+    participant NOMAD
+    participant TargetClient as Target NomadClient
+    Source->>SourceClient: group.ownership_transfers.create(target)
+    SourceClient->>SourceClient: Normalize SDK object or REST mapping
+    SourceClient->>NOMAD: POST /ownership-transfers
+    NOMAD-->>SourceClient: Pending OwnershipTransfer
+    SourceClient-->>Source: Client-bound transfer object
+    TargetClient->>NOMAD: GET transfer or incoming listing
+    NOMAD-->>TargetClient: OwnershipTransfer
+    TargetClient->>NOMAD: POST transfer/respond {action: accept}
+    NOMAD-->>TargetClient: Action result and optional resource data
+```
+
+Ownership transfer is top-level because it spans group and project resources.
+`GroupOperations` binds each returned group to the same transfer operation
+group, enabling resource chaining without giving models their own network
+session. Inputs normalize to explicit `(resource_type, resource_id)` and target
+selector pairs. Unknown future resource types remain possible through an
+explicit string and protocol-style resource properties.
+
+A bare transfer ID requires read-only discovery across the built-in `upload`
+and `group` types. An explicit type makes one request. Blank `get()` performs
+both built-in listings and sorts the combined models locally. Bulk actions are
+sequential, reject duplicates before sending, and collect per-item failures.
+No action is retried: transport failures, server failures, and invalid success
+payloads are uncertain writes that callers must reconcile.
 
 ## Request sequence
 

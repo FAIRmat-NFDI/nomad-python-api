@@ -16,6 +16,7 @@ from ._group_models import Group, GroupMember, GroupPage, GroupRole
 from ._group_paging import GroupList
 from ._user import User
 from ._users import UserOperations, _exact_selector
+from ..ownership._operations import OwnershipTransferOperations
 
 _BASE = "/groups"
 _TARGET = _BASE + "/{group_id}"
@@ -46,9 +47,15 @@ _MemberRef = _UserRef | GroupMember
 class GroupOperations:
     """List and manage user groups on the client's deployment."""
 
-    def __init__(self, pipeline: RequestPipeline, users: UserOperations) -> None:
+    def __init__(
+        self,
+        pipeline: RequestPipeline,
+        users: UserOperations,
+        ownership_transfers: OwnershipTransferOperations,
+    ) -> None:
         self._pipeline = pipeline
         self._users = users
+        self._ownership_transfers = ownership_transfers
 
     def get_operation_info(self, name: str) -> OperationInfo:
         return _OPERATIONS[name].info
@@ -148,7 +155,7 @@ class GroupOperations:
                 raise GroupNotFoundError(error.operation, error.status_code) from None
             raise
         if group is not None:
-            group._endpoint = self._pipeline.endpoint
+            self._ownership_transfers.bind_resource(group)
         return group
 
     def _page(self, query: httpx.QueryParams) -> GroupPage:
@@ -159,7 +166,7 @@ class GroupOperations:
             pass
         else:
             for group in page.items:
-                group._endpoint = self._pipeline.endpoint
+                self._ownership_transfers.bind_resource(group)
             return page
         raise InvalidResponseError("identity.groups.list returned an invalid group page.")
 
@@ -169,7 +176,7 @@ class GroupOperations:
         except ValidationError:
             pass
         else:
-            group._endpoint = self._pipeline.endpoint
+            self._ownership_transfers.bind_resource(group)
             return group
         raise InvalidResponseError(f"{operation.info.name} returned an invalid group.")
 

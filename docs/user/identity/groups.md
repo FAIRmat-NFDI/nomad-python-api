@@ -52,7 +52,9 @@ example updates the description and preserves the other members.
     Use the current group state when other people may be editing membership.
     When passing only a group ID, supply its current owner explicitly.
 
-Group ownership is fixed by NOMAD. Maintainers can manage membership.
+Maintainers can manage membership. To change the owner, use a pending
+[ownership transfer](ownership-transfers.md#transfer-a-loaded-group) that the
+target user must accept.
 
 ## List groups and work in pages
 

@@ -4,15 +4,18 @@ from ._account import Account
 from ._groups import GroupOperations
 from ._pats import PatOperations
 from ._users import _ME, UserOperations
+from ..ownership._operations import OwnershipTransferOperations
 
 
 class IdentityOperations:
     """Operations on the identity associated with the client's credential."""
 
-    def __init__(self, pipeline: RequestPipeline) -> None:
+    def __init__(
+        self, pipeline: RequestPipeline, ownership_transfers: OwnershipTransferOperations
+    ) -> None:
         self._pats = PatOperations(pipeline)
         self._users = UserOperations(pipeline)
-        self._groups = GroupOperations(pipeline, self._users)
+        self._groups = GroupOperations(pipeline, self._users, ownership_transfers)
 
     @property
     def pats(self) -> PatOperations:
