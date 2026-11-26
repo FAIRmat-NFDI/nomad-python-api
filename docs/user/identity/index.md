@@ -22,7 +22,8 @@ to read your account, find users, manage groups, or manage personal access token
 
 - [Set up a client](client.md) and choose the deployment and connection settings.
 - [Authenticate](sign-in.md) with a PAT, a browser, a username and password, or a Keycloak access token.
-- [Check access and scopes](access.md) to understand what the SDK and NOMAD permit.
+- [Set up Oasis sign-in](oasis-identity.md) for your own Keycloak, a brokered SSO provider, or an external SSO provider used directly.
+- [Check access and scopes](access.md) to compare `enforced_scopes`, `requested_scopes`, and `granted_scopes`.
 - [Work with accounts and users](users.md) to read your profile, find collaborators, or send an invitation.
 - [Manage groups](groups.md) and their membership roles.
 - [Transfer ownership](ownership-transfers.md) of groups and projects with

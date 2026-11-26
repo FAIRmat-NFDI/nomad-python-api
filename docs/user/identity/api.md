@@ -51,7 +51,7 @@ Import from `nomad_python_api`. The client owns its API connection pool and uses
 NomadClient(
     *,
     credential: BearerTokenCredential | BrowserCredential | PasswordCredential,
-    allowed_scopes: Iterable[Scope] | None = None,
+    enforced_scopes: Iterable[Scope] | None = None,
     ca_bundle: str | PathLike[str] | None = None,
     pool_limits: ConnectionLimits | None = None,
     timeouts: NetworkTimeouts | None = None,
@@ -63,7 +63,7 @@ NomadClient(
 | Keyword-only parameter | Type | Required or default | Description |
 | --- | --- | --- | --- |
 | `credential` | `BearerTokenCredential`, `BrowserCredential`, or `PasswordCredential` | **Required** | Supplies the access token and selects the deployment. |
-| `allowed_scopes` | `Iterable[Scope]` or `None` | `None` | Local policy. The client takes an immutable snapshot of the supplied scopes. |
+| `enforced_scopes` | `Iterable[Scope]` or `None` | `None` | Local policy, checked before any sign-in or request. The client takes an immutable snapshot of the supplied scopes. It never changes what the token grants. See [Access and scopes](access.md#enforced-scopes). |
 | `ca_bundle` | `str`, `PathLike[str]`, or `None` | `None` | Path to a trusted PEM CA bundle for API calls. With `None`, HTTPX uses its default trust bundle. |
 | `pool_limits` | [`ConnectionLimits`](#connection-limits) or `None` | `None` | Connection limits for this client. `None` uses the settings class defaults. |
 | `timeouts` | [`NetworkTimeouts`](#network-timeouts) or `None` | `None` | Per-phase timeouts for API calls. `None` uses the settings class defaults. |
@@ -92,15 +92,15 @@ Providing `pool_limits` or `ca_bundle` on a client that uses `transport` raises 
 | --- | --- | --- |
 | [`client.identity`](#client-identity) | [`IdentityOperations`](#identity-operations) | Read-only operation group. Accessing it is local. |
 | [`client.ownership_transfers`](#ownership-transfer-operations) | [`OwnershipTransferOperations`](#ownership-transfer-operations) | Read-only ownership-transfer operation group. Accessing it is local. |
-| [`client.allowed_scopes`](#client-allowed-scopes) | `frozenset[Scope]` or `None` | Read-only local scope policy. |
+| [`client.enforced_scopes`](#client-enforced-scopes) | `frozenset[Scope]` or `None` | Read-only local scope policy. |
 
 ##### `client.identity` { #client-identity }
 
 <strong class="api-reference-label">Returns</strong> Read-only [`IdentityOperations`](#identity-operations) bound to this client. Reading the property makes no request.
 
-##### `client.allowed_scopes` { #client-allowed-scopes }
+##### `client.enforced_scopes` { #client-enforced-scopes }
 
-<strong class="api-reference-label">Returns</strong> Read-only `frozenset[Scope] | None`. `None` means all scopes pass the local policy. An empty set blocks any operation that requires a scope. A populated set permits only operations whose required scopes are included. NOMAD independently checks the token's permissions. [`Scope` enum](#scope) · [NOMAD scope catalog](https://docs.nomad-lab.eu/explanation/auth.html#authorization-via-scopes)
+<strong class="api-reference-label">Returns</strong> Read-only `frozenset[Scope] | None`. `None` means all scopes pass the local policy. An empty set blocks any operation that requires a scope. A populated set permits only operations whose required scopes are included and raises `ScopeNotAllowedError` otherwise. NOMAD independently checks the token's permissions. [`Scope` enum](#scope) · [NOMAD scope catalog](https://docs.nomad-lab.eu/explanation/auth.html#authorization-via-scopes)
 
 #### `NomadClient.close()` { #nomad-client-close }
 
@@ -232,13 +232,21 @@ BearerTokenCredential(token: str, *, endpoint: str = "prod", pat_id: str | None 
 
 <strong class="api-reference-label">Returns</strong> Read-only `str | None`. This is the metadata ID when the credential carries one.
 
+#### `BearerTokenCredential.granted_scopes` { #bearer-granted-scopes }
+
+<strong class="api-reference-label">Returns</strong> Read-only `frozenset[str] | None`. For a credential made with [`from_issued()`](#bearer-from-issued), the scopes NOMAD issued to the PAT. The client then raises `ScopeNotGrantedError` before sending a request that needs other scopes. `None` for a token supplied directly, because the SDK does not decode tokens. See [granted scopes](access.md#granted-scopes).
+
+```python
+--8<-- "tests/snippets/identity/test_scopes.py:scopes_granted_from_pat"
+```
+
 #### `BearerTokenCredential.from_issued()` { #bearer-from-issued }
 
 <strong class="api-reference-label">Signature</strong> `from_issued(issued: PatIssuedResult) -> BearerTokenCredential`
 
 <strong class="api-reference-label">Parameters</strong> `issued` is a required [`PatIssuedResult`](#pat-issued-result) returned by `pats.create()` or `pats.rotate()`.
 
-<strong class="api-reference-label">Returns</strong> A credential carrying the issued PAT, metadata ID, and issuing deployment. The conversion is local.
+<strong class="api-reference-label">Returns</strong> A credential carrying the issued PAT, metadata ID, issuing deployment, and the PAT's [`granted_scopes`](#bearer-granted-scopes). The conversion is local.
 
 <strong class="api-reference-label">Raises</strong> `ValueError` if the result lacks an SDK issuing deployment or contains an invalid credential. See the [PAT lifecycle example](pats.md#inspect-use-rotate-and-revoke).
 
@@ -273,6 +281,7 @@ BrowserCredential(
     refresh_margin: float = 30,
     redirect_port: int = 0,
     redirect_path: str = "/",
+    requested_scopes: Iterable[Scope | str] | None = None,
 )
 ```
 
@@ -287,6 +296,7 @@ BrowserCredential(
 | `identity_provider` | `str` or `None` | `None` | Optional realm provider alias sent as `kc_idp_hint`. |
 | `ca_bundle` | `str`, `PathLike[str]`, or `None` | `None` | Trusted PEM CA bundle for credential HTTPS calls. Configure the browser's trust and `NomadClient(ca_bundle=...)` separately where needed. |
 | `login_timeout` | `float` | `180` | Positive time in seconds to wait for the loopback callback. |
+| `requested_scopes` | `Iterable[Scope \| str]` or `None` | `None` | **Advanced.** Extra OIDC client-scope names for the authorization request, sent sorted after `openid`. `None` sends only `openid`. The provider may use registered names for claims, audiences, or refresh-token issuance, but they do not narrow standard NOMAD API permissions. A `Scope` member is serialized to its value and has no special provider meaning. See [validation limits](access.md#requested-scopes). |
 
 <strong class="api-reference-label">Returns</strong> A `BrowserCredential` instance. Construction does not open the browser.
 
@@ -305,6 +315,10 @@ The defaults work for standard sign-in. Set the callback port or path when your 
 If Keycloak registers `http://127.0.0.1:9123/return`, pass `redirect_port=9123` and `redirect_path="/return"` to `BrowserCredential`. The browser returns the authorization code to that local callback. Set `endpoint` to the NOMAD API base URL for the deployment.
 
 Browser credentials renew when a refresh token is available. [Password credentials](#password-credential) use the same margin to time their next password exchange.
+
+#### `BrowserCredential.requested_scopes` and `granted_scopes` { #browser-scope-properties }
+
+<strong class="api-reference-label">Returns</strong> `requested_scopes` is a read-only, sorted `tuple[str, ...] | None` of the names sent at sign-in. `granted_scopes` is always `None`, because the SDK treats identity-service tokens as opaque and NOMAD does not report their grants. See [Access and scopes](access.md#compare).
 
 #### `BrowserCredential.authenticate()` { #browser-authenticate }
 
@@ -340,6 +354,7 @@ PasswordCredential(
     endpoint: str = "prod",
     ca_bundle: str | PathLike[str] | None = None,
     refresh_margin: float = 30,
+    requested_scopes: Iterable[Scope | str] | None = None,
 )
 ```
 
@@ -350,10 +365,15 @@ PasswordCredential(
 | `endpoint` | `str` | `"prod"` | Central or a complete HTTPS NOMAD API v1 base URL. |
 | `ca_bundle` | `str`, `PathLike[str]`, or `None` | `None` | Trusted PEM CA bundle for the password exchange. Configure `NomadClient(ca_bundle=...)` separately for API calls where needed. |
 | `refresh_margin` | `float` | `30` | Advanced setting for when to repeat the password exchange. See [how the renewal margin works](#advanced-browser-settings). |
+| `requested_scopes` | `Iterable[Scope \| str]` or `None` | `None` | **Advanced, ignored by stock NOMAD 2.x.** Scope names sent sorted and space-separated as the `scope` form field of `POST /auth/token`. `None` leaves the field out. It does not restrict the token. Use a [scoped PAT](access.md#granted-scopes) or [`enforced_scopes`](access.md#enforced-scopes). [Semantics and validation limits](access.md#requested-scopes) |
 
 <strong class="api-reference-label">Returns</strong> A `PasswordCredential` instance. Construction reads the supplied arguments or environment.
 
 <strong class="api-reference-label">Raises</strong> `ValueError` for invalid settings or an incomplete credential pair. CA-loading errors propagate if the supplied bundle cannot be used.
+
+#### `PasswordCredential.requested_scopes` and `granted_scopes` { #password-scope-properties }
+
+<strong class="api-reference-label">Returns</strong> `requested_scopes` is a read-only, sorted `tuple[str, ...] | None` of the names sent at sign-in. `granted_scopes` is always `None`, because the SDK treats identity-service tokens as opaque and NOMAD does not report their grants. See [Access and scopes](access.md#compare).
 
 #### `PasswordCredential.authenticate()` { #password-authenticate }
 
@@ -402,7 +422,8 @@ Import these exception classes from `nomad_python_api.exceptions`. Catch `NomadE
 | Exception class | Base class | Meaning |
 | --- | --- | --- |
 | `NomadError` | `Exception` | Base class for SDK request failures. |
-| `ScopeNotAllowedError` | `NomadError` | The local client policy blocked an operation. Read `operation` (`str`) and `missing_scopes` (`frozenset[Scope]`) for context. |
+| `ScopeNotAllowedError` | `NomadError` | The client's `enforced_scopes` blocked an operation before any request. Read `operation` (`str`) and `missing_scopes` (`frozenset[Scope]`) for context. |
+| `ScopeNotGrantedError` | `NomadError` | The credential's known `granted_scopes` lack a required scope, so no request was sent. Read `operation` and `missing_scopes` for context. This is separate from a client-policy refusal. |
 | `CredentialEndpointMismatchError` | `NomadError` | The deployment check rejected a request outside the credential's binding. |
 | `BrowserAuthenticationError` | `NomadError` | Browser sign-in or communication with Keycloak failed. Check the issuer, callback registration, browser, or timeout. |
 | `ReauthenticationRequiredError` | `BrowserAuthenticationError` | The browser credential needs a fresh sign-in. Call `credential.authenticate()`. |
@@ -424,7 +445,7 @@ Import these exception classes from `nomad_python_api.exceptions`. Catch `NomadE
 
 #### Worked example: handle scope and authentication errors
 
-Run this inside an open `NomadClient` context. Set `allowed_scopes=set()` when constructing the client to see a local scope error. The example prints the missing scopes without sending an account request.
+Run this inside an open `NomadClient` context. Set `enforced_scopes=set()` when constructing the client to see a local scope error. The example prints the missing scopes without sending an account request.
 
 ```python
 --8<-- "tests/snippets/identity/test_authentication.py:error_recovery"
@@ -1007,7 +1028,8 @@ The echoed filters consist of `search: str`, `state: Literal["active", "inactive
 
 | Error | When to expect it | What to check |
 | --- | --- | --- |
-| `ScopeNotAllowedError` | The caller's local policy blocks the request. | Include the operation's documented scopes in `allowed_scopes`. NOMAD also checks the access token. |
+| `ScopeNotAllowedError` | The caller's local policy blocks the request. | Include the operation's documented scopes in `enforced_scopes`. NOMAD also checks the access token. |
+| `ScopeNotGrantedError` | The credential's known `granted_scopes` lack a required scope. | Create a PAT that includes the operation's scopes. |
 | `ClientAuthenticationError`, `AuthorizationError` | HTTP `401` or `403`, respectively. | Check token validity and deployment for `401`. Use a management access token with the required scopes for `403`. |
 | `CredentialEndpointMismatchError` | A credential or returned metadata identifies a different deployment. | Connect to the issuing deployment. |
 | `ValueError` | Invalid options, missing PAT metadata ID, conflicting filters, or an extension collision. | Use the fields described above. |

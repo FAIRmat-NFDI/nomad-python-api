@@ -36,9 +36,9 @@ def test_scope_snapshot_and_metadata(nomad_http, monkeypatch):
     get_token = Mock(side_effect=AssertionError("unexpected credential access"))
     monkeypatch.setattr(credential, "_get_token", get_token)
     original_scopes = set()
-    with NomadClient(credential=credential, allowed_scopes=original_scopes) as client:
+    with NomadClient(credential=credential, enforced_scopes=original_scopes) as client:
         original_scopes.add(Scope.USERS_READ)
-        assert client.allowed_scopes == frozenset()
+        assert client.enforced_scopes == frozenset()
         info = client.identity.get_operation_info("me")
         assert info.name == "identity.me"
         assert info.description
@@ -57,7 +57,7 @@ def test_client_reuses_transport_and_closes_it(nomad_http):
     credential = BearerTokenCredential(_TOKEN, endpoint=f"{_PROD}/")
     with NomadClient(credential=credential) as client:
         assert nomad_http.requests == []
-        assert client.allowed_scopes is None
+        assert client.enforced_scopes is None
         assert client.identity.me() == Account("example-id", "demo")
         assert client.identity.me() == Account("example-id", "demo")
     assert len(nomad_http.clients) == 1
@@ -74,7 +74,7 @@ def test_client_reuses_transport_and_closes_it(nomad_http):
 def test_untyped_scopes_and_unknown_keywords_fail_before_transport(nomad_http):
     credential = BearerTokenCredential(_TOKEN, endpoint="prod")
     with pytest.raises(TypeError, match="Scope members"):
-        NomadClient(credential=credential, allowed_scopes=[Scope.USERS_READ, "users:read"])
+        NomadClient(credential=credential, enforced_scopes=[Scope.USERS_READ, "users:read"])
     with pytest.raises(TypeError, match="allowed_scope"):
         NomadClient(credential=credential, allowed_scope=set())
     with pytest.raises(TypeError, match="endpoint"):

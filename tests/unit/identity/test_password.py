@@ -76,7 +76,7 @@ def test_incomplete_password_pairs_are_rejected(monkeypatch, username, password,
 
 def test_password_scope_and_deployment_checks_precede_login(nomad_http):
     credential = PasswordCredential(username=USERNAME, password=PASSWORD, endpoint=OASIS)
-    with NomadClient(credential=credential, allowed_scopes=set()) as client:
+    with NomadClient(credential=credential, enforced_scopes=set()) as client:
         with pytest.raises(ScopeNotAllowedError):
             client.identity.me()
     with pytest.raises(CredentialEndpointMismatchError):

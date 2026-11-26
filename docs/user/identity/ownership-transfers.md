@@ -19,7 +19,7 @@ transfer routes.
 | List or get transfers | `uploads:read` |
 | Create, accept, refuse, or cancel | `uploads:read` and `uploads:write` |
 
-The client's `allowed_scopes` is a local safety boundary. NOMAD independently
+The client's [`enforced_scopes`](access.md#enforced-scopes) is a local safety boundary. NOMAD independently
 checks the credential and whether the signed-in user is allowed to act on the
 resource or transfer.
 

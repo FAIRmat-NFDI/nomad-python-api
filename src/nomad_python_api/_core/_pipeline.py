@@ -18,6 +18,7 @@ from ..exceptions import (
     PoolTimeoutError,
     RateLimitError,
     ScopeNotAllowedError,
+    ScopeNotGrantedError,
     TransportError,
 )
 from ._endpoint import normalize_endpoint
@@ -43,6 +44,9 @@ def _confirmed_status(error: httpx.HTTPStatusError, request: httpx.Request) -> i
 
 
 class _Credential(Protocol):
+    @property
+    def granted_scopes(self) -> frozenset[str] | None: ...
+
     def _get_token(self, *, endpoint: str, scopes: frozenset[Scope]) -> str: ...
 
 
@@ -54,7 +58,7 @@ class RequestPipeline:
         *,
         endpoint: str,
         credential: _Credential,
-        allowed_scopes: Iterable[Scope] | None,
+        enforced_scopes: Iterable[Scope] | None,
         ca_bundle: str | PathLike[str] | None,
         pool_limits: ConnectionLimits | None,
         timeouts: NetworkTimeouts | None,
@@ -63,10 +67,10 @@ class RequestPipeline:
     ) -> None:
         self._endpoint = normalize_endpoint(endpoint)
         self._credential = credential
-        scopes = None if allowed_scopes is None else tuple(allowed_scopes)
+        scopes = None if enforced_scopes is None else tuple(enforced_scopes)
         if scopes is not None and any(not isinstance(scope, Scope) for scope in scopes):
-            raise TypeError("allowed_scopes must contain Scope members.")
-        self.allowed_scopes = None if scopes is None else frozenset(scopes)
+            raise TypeError("enforced_scopes must contain Scope members.")
+        self.enforced_scopes = None if scopes is None else frozenset(scopes)
         self._closed = False
         self._transport = transport
         self._owns_http = http_client is None
@@ -113,16 +117,21 @@ class RequestPipeline:
         return self._closed or self._http.is_closed
 
     def check_operation(self, operation: Operation) -> None:
-        """Check client state and local scope policy before starting an operation."""
+        """Check client state, the enforced policy, and known token grants before an operation."""
         if self.is_closed:
             raise RuntimeError("The NOMAD client is closed.")
         if self._transport is not None and self._transport.is_closed:
             raise RuntimeError("The NOMAD transport is closed.")
         info = operation.info
-        if self.allowed_scopes is not None:
-            missing = info.required_scopes - self.allowed_scopes
+        if self.enforced_scopes is not None:
+            missing = info.required_scopes - self.enforced_scopes
             if missing:
                 raise ScopeNotAllowedError(info.name, missing)
+        granted = self._credential.granted_scopes
+        if granted is not None:
+            missing = frozenset(scope for scope in info.required_scopes if scope.value not in granted)
+            if missing:
+                raise ScopeNotGrantedError(info.name, missing)
 
     def send(
         self,

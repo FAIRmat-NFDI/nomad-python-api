@@ -46,7 +46,7 @@ def make_client():
             http = stack.enter_context(httpx.Client(transport=httpx.MockTransport(handler), **http_options))
             return stack.enter_context(NomadClient(
                 credential=credential or BearerTokenCredential("management-fixture"),
-                allowed_scopes=scopes,
+                enforced_scopes=scopes,
                 http_client=http,
             ))
 

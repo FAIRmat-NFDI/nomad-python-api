@@ -23,6 +23,7 @@ nav:
               - Set up a client: user/identity/client.md
               - Connections and HPC: user/identity/connections.md
           - Authentication: user/identity/sign-in.md
+          - Oasis identity setups: user/identity/oasis-identity.md
           - Access and scopes: user/identity/access.md
           - Accounts and users: user/identity/users.md
           - Groups: user/identity/groups.md

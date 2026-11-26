@@ -162,7 +162,7 @@ def test_invalid_discovery_stops_sign_in(override, nomad_http, browser_sign_in):
 def test_scope_mismatch_and_closed_client_block_browser(nomad_http, browser_sign_in):
     with pytest.raises(CredentialEndpointMismatchError):
         explicit(endpoint=OASIS)._get_token(endpoint=CENTRAL, scopes=frozenset())
-    with NomadClient(credential=explicit(), allowed_scopes=set()) as client:
+    with NomadClient(credential=explicit(), enforced_scopes=set()) as client:
         with pytest.raises(ScopeNotAllowedError):
             client.identity.me()
     with pytest.raises(RuntimeError, match="closed"):

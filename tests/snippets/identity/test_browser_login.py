@@ -40,7 +40,7 @@ def test_central_browser_login(nomad_http, browser_sign_in):
         identity_provider="helmholtz-aai",
     )
 
-    with NomadClient(credential=credential, allowed_scopes={Scope.USERS_READ}) as client:
+    with NomadClient(credential=credential, enforced_scopes={Scope.USERS_READ}) as client:
         account = client.identity.me()
     # --8<-- [end:central_browser_login]
 

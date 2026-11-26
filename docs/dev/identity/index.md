@@ -9,7 +9,7 @@ classDiagram
     class NomadClient {
         +identity
         +ownership_transfers
-        +allowed_scopes
+        +enforced_scopes
         +close()
     }
     class IdentityOperations {
@@ -27,18 +27,23 @@ classDiagram
         -deployment URL
         -token
         +pat_id
+        +granted_scopes
         +from_issued()
     }
     class BrowserCredential {
         -deployment URL
         -issuer and client ID
         -in-memory session
+        +requested_scopes
+        +granted_scopes = None
         +authenticate()
     }
     class PasswordCredential {
         -deployment URL
         -username and password
         -in-memory session
+        +requested_scopes
+        +granted_scopes = None
         +authenticate()
     }
     class TokenSession {
@@ -113,6 +118,17 @@ classDiagram
 ```
 
 The `me` operation declaration in `identity/_operations.py` supplies both the required scope used by the pipeline and the metadata returned by `get_operation_info("me")`. The client initializes the pipeline with the credential's normalized API URL. Each credential still checks deployment binding before supplying a token. `identity/_account.py` holds the public result model.
+
+Scopes appear in three separate roles. `NomadClient(enforced_scopes=...)` is the
+client's local policy. `requested_scopes` on the browser and password credentials
+is sent at sign-in and never consulted locally. OIDC providers process browser
+scope names as client scopes; stock NOMAD 2.x accepts but ignores the password
+form field. Neither mechanism narrows standard NOMAD API permissions.
+`granted_scopes` is known only for a `BearerTokenCredential` built with
+`from_issued()`; the sign-in credentials report `None`. The pipeline checks the
+enforced policy and then any known grants before asking the credential for a
+token, so both refusals happen without network access. NOMAD remains
+authoritative. [Access and scopes](../../user/identity/access.md)
 
 PAT management is registered in `identity/_pats.py`. The pipeline applies
 scope policy before token acquisition and keeps the method, encoded path,
@@ -230,10 +246,12 @@ sequenceDiagram
 
     App->>Identity: me()
     Identity->>Pipeline: send the registered account operation
-    Pipeline->>Pipeline: Check local users:read policy
-    alt Client scope denies
+    Pipeline->>Pipeline: Check users:read against enforced_scopes
+    alt Client policy denies
         Pipeline-->>App: ScopeNotAllowedError
-    else Client scope permits
+    else Known grants lack users:read
+        Pipeline-->>App: ScopeNotGrantedError
+    else Policy and known grants permit, or grants unknown
         Pipeline->>Credential: Request token for deployment and scopes
         alt Deployment differs
             Credential-->>App: CredentialEndpointMismatchError
@@ -247,7 +265,7 @@ sequenceDiagram
     end
 ```
 
-Construction and inspection are local. A scope denial or deployment mismatch occurs before the first HTTP request. On this feature, server `401`, `403`, and `429` map to different errors. No automatic retry occurs.
+Construction and inspection are local. A policy denial, a known-grant denial, or a deployment mismatch occurs before the first HTTP request. On this feature, server `401`, `403`, and `429` map to different errors. No automatic retry occurs.
 
 ## Browser sign-in and refresh
 
@@ -266,7 +284,7 @@ sequenceDiagram
             Keycloak-->>Credential: Issuer and identity endpoints
         end
         Credential->>Listener: Bind IPv4 loopback and open callback window
-        Credential->>Browser: Open authorization URL with PKCE and state
+        Credential->>Browser: Open authorization URL with PKCE, state, and scope openid plus requested_scopes
         Browser->>Keycloak: Sign in, optionally through a configured provider
         Browser->>Listener: Return authorization code and state
         Listener-->>Credential: Validated code and redirect URI
@@ -296,7 +314,7 @@ sequenceDiagram
     Credential->>Session: Read or renew token under lock
     alt Token absent or near expiry
         Session->>Credential: Obtain an access token
-        Credential->>NOMAD: POST /auth/token with password form
+        Credential->>NOMAD: POST /auth/token with password form and optional scope
         NOMAD-->>Credential: Token response or rejection
         Credential-->>Session: Validated token or typed error
     else Valid cached token
@@ -313,9 +331,11 @@ sequenceDiagram
 flowchart TD
     Start([Call identity.me]) --> Open{Client open?}
     Open -->|No| ClosedError[Raise closed-client error]
-    Open -->|Yes| Scope{Allowed by local scope policy?}
-    Scope -->|No| ScopeError[Raise local scope error]
-    Scope -->|Yes| Bound{Credential matches deployment?}
+    Open -->|Yes| Scope{Inside enforced_scopes?}
+    Scope -->|No| ScopeError[Raise ScopeNotAllowedError]
+    Scope -->|Yes or unset| Granted{Inside known granted_scopes?}
+    Granted -->|No| GrantError[Raise ScopeNotGrantedError]
+    Granted -->|Yes or unknown| Bound{Credential matches deployment?}
     Bound -->|No| BindingError[Raise credential mismatch]
     Bound -->|Yes| Token[Obtain or reuse a bearer token]
     Token --> Send[Send one bearer request]
@@ -357,14 +377,16 @@ erDiagram
     DEPLOYMENT ||--o{ CLIENT : targets
     DEPLOYMENT ||--o{ BEARER_CREDENTIAL : binds
     BEARER_CREDENTIAL ||--o{ CLIENT : supplies
-    CLIENT ||--o{ ALLOWED_SCOPE : limits
+    CLIENT ||--o{ ENFORCED_SCOPE : limits
+    BEARER_CREDENTIAL ||--o{ GRANTED_SCOPE : "knows (from_issued)"
+    SIGN_IN_CREDENTIAL ||--o{ REQUESTED_SCOPE : "sends at sign-in"
     OPERATION ||--o{ REQUIRED_SCOPE : declares
-    SCOPE ||--o{ ALLOWED_SCOPE : identifies
+    SCOPE ||--o{ ENFORCED_SCOPE : identifies
     SCOPE ||--o{ REQUIRED_SCOPE : identifies
     DEPLOYMENT ||--o{ ACCOUNT : returns
 ```
 
-The SDK does not create a credential database or infer token grants from the token string. The local allowed scopes and operation requirements are separate from the deployment's authorization data. An account response contains only values returned by the deployment and mapped by the SDK.
+The SDK does not create a credential database or infer token grants from the token string. Granted scopes come only from the PAT issuance response. The enforced scopes and operation requirements are separate from the deployment's authorization data. An account response contains only values returned by the deployment and mapped by the SDK.
 
 ## Where to customize and verify
 

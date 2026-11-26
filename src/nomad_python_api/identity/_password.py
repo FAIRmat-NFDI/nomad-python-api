@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import os
+from collections.abc import Iterable
 from math import isfinite
 from os import PathLike
 
@@ -10,7 +11,7 @@ from .._core._endpoint import normalize_endpoint
 from .._scopes import Scope
 from ..exceptions import PasswordAuthenticationError
 from . import _token
-from ._credential import _require_endpoint
+from ._credential import _require_endpoint, _scope_names
 from ._token import _TokenSession, _Tokens, _identity_tls, _read_tokens, _request_json
 
 
@@ -20,6 +21,10 @@ class PasswordCredential:
     Supply the credentials as a pair or set NOMAD_USERNAME and NOMAD_PASSWORD.
     Construction reads the pair once. The credential retains it in memory for
     on-demand renewal through the deployment's password grant.
+
+    ``requested_scopes`` is sent as the OAuth ``scope`` form field. Standard
+    NOMAD ignores it and issues the account's full permissions. Use
+    ``NomadClient(enforced_scopes=...)`` for a reliable local restriction.
     """
 
     def __init__(
@@ -30,6 +35,7 @@ class PasswordCredential:
         endpoint: str = "prod",
         ca_bundle: str | PathLike[str] | None = None,
         refresh_margin: float = 30,
+        requested_scopes: Iterable[Scope | str] | None = None,
     ) -> None:
         if username is None and password is None:
             username = os.environ.get("NOMAD_USERNAME")
@@ -38,6 +44,7 @@ class PasswordCredential:
             raise ValueError("Provide both username and password, or set both NOMAD_USERNAME and NOMAD_PASSWORD.")
         if not isfinite(refresh_margin) or refresh_margin < 0:
             raise ValueError("refresh_margin must be finite and nonnegative.")
+        self._requested_scopes = _scope_names(requested_scopes)
         self._endpoint = normalize_endpoint(endpoint)
         self._username = username
         self._password = password
@@ -51,12 +58,24 @@ class PasswordCredential:
             ),
         )
 
+    @property
+    def requested_scopes(self) -> tuple[str, ...] | None:
+        """Return the scope names sent at sign-in, or None when the field is omitted."""
+        return self._requested_scopes
+
+    @property
+    def granted_scopes(self) -> None:
+        """Return None because NOMAD does not report the token's grants."""
+        return None
+
     def _sign_in(self) -> _Tokens:
         started = _token.monotonic()
+        form = {"grant_type": "password", "username": self._username, "password": self._password}
+        if self._requested_scopes is not None:
+            form["scope"] = " ".join(self._requested_scopes)
         status, document = _request_json(
             "POST", self._endpoint + "/auth/token",
-            verify=self._verify, error=PasswordAuthenticationError,
-            form={"grant_type": "password", "username": self._username, "password": self._password},
+            verify=self._verify, error=PasswordAuthenticationError, form=form,
         )
         if status in (401, 403) or (status == 400 and document.get("error") == "invalid_grant"):
             self._session.require_sign_in()

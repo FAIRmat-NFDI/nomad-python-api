@@ -1,3 +1,3 @@
 {
-  "allowed_scopes": ["users:read"]
+  "enforced_scopes": ["users:read"]
 }

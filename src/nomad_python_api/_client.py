@@ -18,7 +18,8 @@ class NomadClient:
 
     Args:
         credential: The credential whose bound API endpoint selects the deployment.
-        allowed_scopes: Optional local limit on the operations the client attempts.
+        enforced_scopes: Optional local limit on the operations the client attempts. It is
+            checked before any token or HTTP request and never changes what the token grants.
         ca_bundle: Optional PEM CA bundle for a deployment using a private CA.
         pool_limits: Optional limits for the client's API connection pool.
         timeouts: Optional per-phase timeouts for the client's API requests.
@@ -30,7 +31,7 @@ class NomadClient:
         self,
         *,
         credential: BearerTokenCredential | BrowserCredential | PasswordCredential,
-        allowed_scopes: Iterable[Scope] | None = None,
+        enforced_scopes: Iterable[Scope] | None = None,
         ca_bundle: str | PathLike[str] | None = None,
         pool_limits: ConnectionLimits | None = None,
         timeouts: NetworkTimeouts | None = None,
@@ -40,7 +41,7 @@ class NomadClient:
         self._pipeline = RequestPipeline(
             endpoint=credential._endpoint,
             credential=credential,
-            allowed_scopes=allowed_scopes,
+            enforced_scopes=enforced_scopes,
             ca_bundle=ca_bundle,
             pool_limits=pool_limits,
             timeouts=timeouts,
@@ -61,9 +62,9 @@ class NomadClient:
         return self._ownership_transfers
 
     @property
-    def allowed_scopes(self) -> frozenset[Scope] | None:
+    def enforced_scopes(self) -> frozenset[Scope] | None:
         """Return the immutable local policy, or None for no local restriction."""
-        return self._pipeline.allowed_scopes
+        return self._pipeline.enforced_scopes
 
     def close(self) -> None:
         """Close the client and any HTTP connections it owns."""

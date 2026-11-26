@@ -36,13 +36,13 @@ See the [client setup example](client.md#advanced-client-options-for-workers) fo
 
 === "Self-hosted NOMAD Oasis"
 
-    Get the API URL and Keycloak settings from your Oasis administrator. This example uses explicit Keycloak URLs and signs in before calling the API. [Oasis Keycloak setup](../../dev/oasis/index.md#configure-browser-login)
+    Get the API URL and Keycloak settings from your Oasis administrator. This example uses explicit Keycloak URLs and signs in before calling the API. For your own Keycloak, a proxy or private CA, brokered SSO, or an external SSO provider used directly, see [Oasis identity setups](oasis-identity.md). [Oasis Keycloak setup](../../dev/oasis/index.md#configure-browser-login)
 
     ```python
     --8<-- "tests/snippets/identity/test_browser_login.py:oasis_browser_login"
     ```
 
-Run browser login where Python and the browser share a loopback interface, including a local Jupyter kernel. By default, the SDK lets the operating system pick a free callback port and handles token renewal as requests need it. Use the [advanced browser settings](api.md#advanced-browser-settings) if your Oasis administrator gives you a fixed callback URL.
+Run browser login where Python and the browser share a loopback interface, including a local Jupyter kernel. By default, the SDK lets the operating system pick a free callback port and handles token renewal as requests need it. Use the [advanced browser settings](api.md#advanced-browser-settings) if your Oasis administrator gives you a fixed callback URL. The authorization request asks for `openid`. Add scope names with the advanced `requested_scopes` option only when your Oasis identity setup needs them. See [Advanced: request scopes at sign-in](access.md#requested-scopes).
 
 ## Sign in with a username and password { #password-login }
 
@@ -64,7 +64,7 @@ Replace the example username and set `NOMAD_PASSWORD` through a secure prompt or
     --8<-- "tests/snippets/identity/test_password_login.py:oasis_password_login"
     ```
 
-See [`PasswordCredential`](api.md#password-credential) for renewal and private CA settings.
+See [`PasswordCredential`](api.md#password-credential) for renewal and private CA settings. The token carries your full user scopes. Restrict the client with [`enforced_scopes`](access.md#enforced-scopes), or run jobs with a [scoped PAT](access.md#granted-scopes). The advanced `requested_scopes` option does not restrict tokens on standard NOMAD. [Details](access.md#requested-scopes)
 
 ## Use an existing Keycloak access token
 
@@ -88,4 +88,4 @@ In Jupyter, install the SDK in the active kernel's environment. In pyiron, creat
 
 ## Scope and access settings { #choose-and-inspect-scopes }
 
-See [Access and scopes](access.md#choose-and-inspect-scopes) for permission checks and troubleshooting.
+See [Access and scopes](access.md#choose-and-inspect-scopes) for `enforced_scopes`, `requested_scopes`, and `granted_scopes`, permission checks, and troubleshooting.

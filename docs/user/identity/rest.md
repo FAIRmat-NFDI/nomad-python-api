@@ -313,12 +313,12 @@ The authorization and token URLs come from an explicit pair of endpoints or from
 | Step | Request | Fields and result |
 | --- | --- | --- |
 | Discover endpoints | `GET {issuer}/.well-known/openid-configuration` | Used with `discover=True`. Response must contain the exact `issuer`, `authorization_endpoint`, and `token_endpoint`. If present, `code_challenge_methods_supported` must include `S256`. |
-| Authorize | Browser `GET {authorization_endpoint}` | Query includes `client_id`, `response_type=code`, `response_mode=query`, `scope=openid`, `redirect_uri`, a random `state`, `code_challenge`, and `code_challenge_method=S256`. Optional `identity_provider` becomes `kc_idp_hint`. |
+| Authorize | Browser `GET {authorization_endpoint}` | Query includes `client_id`, `response_type=code`, `response_mode=query`, `scope` (`openid` followed by any sorted [`requested_scopes`](access.md#requested-scopes)), `redirect_uri`, a random `state`, `code_challenge`, and `code_challenge_method=S256`. Optional `identity_provider` becomes `kc_idp_hint`. |
 | Receive callback | Browser `GET http://127.0.0.1:<port>/<path>` | Query includes `state` and either `code` or `error`. The SDK verifies the state and checks `iss` against the issuer when supplied. |
 | Exchange code | `POST {token_endpoint}` | Form includes `grant_type=authorization_code`, `client_id`, `code`, the same `redirect_uri`, and `code_verifier`. |
 | Refresh token | `POST {token_endpoint}` | Form includes `grant_type=refresh_token`, `client_id`, and `refresh_token`. A returned refresh token replaces the previous value. |
 
-Both token requests use `application/x-www-form-urlencoded`. The SDK requires `access_token`, `token_type=Bearer`, and a positive integer `expires_in` in successful responses. It keeps an optional `refresh_token` in memory. The access token goes to the selected NOMAD API as a bearer token. The OAuth `openid` scope starts sign-in, while NOMAD applies its own API permissions to the issued access token. [NOMAD authorization model](https://docs.nomad-lab.eu/explanation/auth.html#keycloak-access-tokens)
+Both token requests use `application/x-www-form-urlencoded`. The SDK requires `access_token`, `token_type=Bearer`, and a positive integer `expires_in` in successful responses. It keeps an optional `refresh_token` in memory. The access token goes to the selected NOMAD API as a bearer token. The OAuth `openid` scope starts sign-in. Keycloak or another OIDC provider processes additional registered client scopes and may change token claims, audiences, or refresh-token issuance; unsupported values may be rejected. NOMAD independently applies its API permissions and standard NOMAD does not narrow them because an OIDC scope was requested. Some [Oasis identity setups](oasis-identity.md#direct-sso) need extra scopes to obtain a token for the Oasis API or a refresh token. [NOMAD authorization model](https://docs.nomad-lab.eu/explanation/auth.html#keycloak-access-tokens)
 
 ## POST /auth/token { #password-login-rest }
 
@@ -331,7 +331,7 @@ This request uses the credential's NOMAD API base URL and sends an `application/
 | `grant_type` | Required string, `password` | Supplied by `PasswordCredential` |
 | `username` | Required string | `username` or `NOMAD_USERNAME` |
 | `password` | Required string | `password` or `NOMAD_PASSWORD` |
-| `scope` | Optional string, defaults to empty | The credential omits it. `allowed_scopes` is a separate local policy. |
+| `scope` | Optional string, defaults to empty | Space-separated, sorted `requested_scopes`. Omitted when `requested_scopes` is `None`. NOMAD 2.x accepts the field but does not use it, so the token keeps the full user scope set. `enforced_scopes` is a separate local policy. |
 | `client_id`, `client_secret` | Optional strings in the form schema | The credential omits them. The upstream handler uses the deployment's Keycloak client settings. |
 
 The SDK requires a successful response to contain `access_token`, `token_type=Bearer`, and a positive integer `expires_in`. The response can also contain `id_token`, `refresh_token`, `scope`, and `refresh_expires_in`. The password credential uses the access token for API calls and repeats the password exchange for renewal. A rejected exchange raises `PasswordAuthenticationError` before any API operation is sent.

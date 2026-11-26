@@ -25,6 +25,7 @@ __all__ = [
     "RateLimitError",
     "ReauthenticationRequiredError",
     "ScopeNotAllowedError",
+    "ScopeNotGrantedError",
     "TransportError",
     "UserNotFoundError",
 ]
@@ -42,6 +43,18 @@ class ScopeNotAllowedError(NomadError):
         self.missing_scopes = missing_scopes
         scope_names = ", ".join(sorted(scope.value for scope in missing_scopes))
         super().__init__(f"{operation} requires scopes outside this client's policy: {scope_names}.")
+
+
+class ScopeNotGrantedError(NomadError):
+    """The credential's known token grants lack a required scope, so no request was sent."""
+
+    def __init__(self, operation: str, missing_scopes: frozenset[Scope]) -> None:
+        self.operation = operation
+        self.missing_scopes = missing_scopes
+        scope_names = ", ".join(sorted(scope.value for scope in missing_scopes))
+        super().__init__(
+            f"{operation} requires scopes the credential's token was not granted: {scope_names}."
+        )
 
 
 class CredentialEndpointMismatchError(NomadError):

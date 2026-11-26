@@ -36,7 +36,7 @@ def test_account_accepts_a_real_pat(endpoint: str) -> None:
     credential = BearerTokenCredential(token, endpoint=endpoint)
     with NomadClient(
         credential=credential,
-        allowed_scopes={Scope.USERS_READ},
+        enforced_scopes={Scope.USERS_READ},
     ) as client:
         account = client.identity.me()
 

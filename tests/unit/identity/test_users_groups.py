@@ -195,7 +195,7 @@ def test_group_resolves_selectors_before_writing(client, nomad_http):
 def test_group_create_delegates_empty_membership_and_rejects_owner_overrides(nomad_http):
     nomad_http.respond = lambda request: httpx.Response(201, json=_GROUP)
     with NomadClient(
-        credential=BearerTokenCredential("directory-fixture"), allowed_scopes={Scope.GROUPS_WRITE},
+        credential=BearerTokenCredential("directory-fixture"), enforced_scopes={Scope.GROUPS_WRITE},
     ) as client:
         groups = client.identity.groups
         groups.create(name="Diffraction team", members=[])
@@ -266,7 +266,7 @@ def test_group_scope_and_cross_deployment_guard(nomad_http):
     with NomadClient(credential=BearerTokenCredential("local")) as local:
         with pytest.raises(CredentialEndpointMismatchError):
             local.identity.groups.create(members=[member])
-    with NomadClient(credential=BearerTokenCredential("local"), allowed_scopes={Scope.USERS_READ}) as local:
+    with NomadClient(credential=BearerTokenCredential("local"), enforced_scopes={Scope.USERS_READ}) as local:
         with pytest.raises(ScopeNotAllowedError) as error:
             local.identity.groups.create(members=[{"email": "ana@example.org"}])
         assert error.value.missing_scopes == {Scope.GROUPS_WRITE}

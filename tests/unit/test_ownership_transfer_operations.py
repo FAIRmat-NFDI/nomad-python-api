@@ -174,7 +174,7 @@ def test_errors_and_uncertain_writes_are_typed(client, nomad_http):
 def test_scope_policy_and_metadata_are_local(nomad_http):
     with NomadClient(
         credential=BearerTokenCredential("ownership-fixture"),
-        allowed_scopes={Scope.UPLOADS_READ},
+        enforced_scopes={Scope.UPLOADS_READ},
     ) as client:
         info = client.ownership_transfers.get_operation_info("create")
         assert info.required_scopes == {Scope.UPLOADS_READ, Scope.UPLOADS_WRITE}

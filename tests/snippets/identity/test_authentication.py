@@ -35,7 +35,7 @@ def test_named_setup(nomad_http):
 
     with NomadClient(
         credential=credential,
-        allowed_scopes={Scope.USERS_READ},
+        enforced_scopes={Scope.USERS_READ},
     ) as client:
         # Confirm which account the token belongs to.
         account = client.identity.me()
@@ -247,7 +247,7 @@ def test_hpc_worker_setup(nomad_http):
         )
         with NomadClient(
             credential=credential,
-            allowed_scopes={Scope.USERS_READ},
+            enforced_scopes={Scope.USERS_READ},
             pool_limits=ConnectionLimits(max_connections=2, max_keepalive_connections=2),
             timeouts=NetworkTimeouts(pool=5, read=30),
         ) as client:
@@ -271,7 +271,7 @@ def test_dictionary_setup_and_local_discovery(nomad_http):
 
     options = {
         "credential": BearerTokenCredential(os.environ["NOMAD_PAT"]),
-        "allowed_scopes": {Scope.USERS_READ},
+        "enforced_scopes": {Scope.USERS_READ},
     }
 
     with NomadClient(**options) as client:
@@ -279,7 +279,7 @@ def test_dictionary_setup_and_local_discovery(nomad_http):
         info = client.identity.get_operation_info("me")
         print(info.description)
         print([scope.value for scope in info.required_scopes])
-        print(client.allowed_scopes)
+        print(client.enforced_scopes)
         account = client.identity.me()
     # --8<-- [end:dictionary_setup]
 
@@ -296,10 +296,10 @@ def test_inspect_and_read_account(nomad_http, capsys):
     from nomad_python_api.identity import BearerTokenCredential
 
     credential = BearerTokenCredential(os.environ["NOMAD_PAT"])
-    with NomadClient(credential=credential, allowed_scopes={Scope.USERS_READ}) as client:
+    with NomadClient(credential=credential, enforced_scopes={Scope.USERS_READ}) as client:
         # Compare the client's policy with the operation's requirements.
         info = client.identity.get_operation_info("me")
-        print("Allowed:", sorted(scope.value for scope in client.allowed_scopes or ()))
+        print("Enforced:", sorted(scope.value for scope in client.enforced_scopes or ()))
         print("Required:", sorted(scope.value for scope in info.required_scopes))
 
         account = client.identity.me()
@@ -308,7 +308,7 @@ def test_inspect_and_read_account(nomad_http, capsys):
     # --8<-- [end:inspect_and_read_account]
 
     assert capsys.readouterr().out.splitlines() == [
-        "Allowed: ['users:read']",
+        "Enforced: ['users:read']",
         "Required: ['users:read']",
         "Account returned: True",
         "Username available: True",
@@ -325,15 +325,15 @@ def test_json_setup(nomad_http, tmp_path, monkeypatch, scenario):
     settings_path = tmp_path / "nomad-settings.json"
     settings_text = _SETTINGS.read_text(encoding="utf-8")
     settings = json.loads(settings_text)
-    assert set(settings) == {"allowed_scopes"}
+    assert set(settings) == {"enforced_scopes"}
     if scenario == "custom_endpoint":
         settings["endpoint"] = _DEV_API
     elif scenario == "omitted":
-        settings.pop("allowed_scopes")
+        settings.pop("enforced_scopes")
     elif scenario == "empty":
-        settings["allowed_scopes"] = []
+        settings["enforced_scopes"] = []
     elif scenario == "invalid":
-        settings["allowed_scopes"] = ["unknown:read"]
+        settings["enforced_scopes"] = ["unknown:read"]
     settings_path.write_text(settings_text if scenario == "fixture" else json.dumps(settings), encoding="utf-8")
     monkeypatch.chdir(tmp_path)
 
@@ -348,11 +348,11 @@ def test_json_setup(nomad_http, tmp_path, monkeypatch, scenario):
 
         settings = json.loads(Path("nomad-settings.json").read_text(encoding="utf-8"))
         endpoint = settings.get("endpoint", "prod")
-        scope_names = settings.get("allowed_scopes")
-        allowed_scopes = None if scope_names is None else {Scope(name) for name in scope_names}
+        scope_names = settings.get("enforced_scopes")
+        enforced_scopes = None if scope_names is None else {Scope(name) for name in scope_names}
         credential = BearerTokenCredential(os.environ["NOMAD_PAT"], endpoint=endpoint)
 
-        with NomadClient(credential=credential, allowed_scopes=allowed_scopes) as client:
+        with NomadClient(credential=credential, enforced_scopes=enforced_scopes) as client:
             account = client.identity.me()
         # --8<-- [end:json_setup]
         return account
@@ -439,7 +439,7 @@ def test_error_recovery(nomad_http, scenario, expected, capsys):
     from nomad_python_api.identity import BearerTokenCredential
 
     credential = BearerTokenCredential(os.environ["NOMAD_PAT"])
-    with NomadClient(credential=credential, allowed_scopes={Scope.USERS_READ}) as client:
+    with NomadClient(credential=credential, enforced_scopes={Scope.USERS_READ}) as client:
         # Report actionable errors without printing the token.
         try:
             account = client.identity.me()

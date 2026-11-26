@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import re
 from base64 import urlsafe_b64encode
+from collections.abc import Iterable
 from hashlib import sha256
 from math import isfinite
 from os import PathLike
@@ -19,7 +20,7 @@ from ..exceptions import (
     ReauthenticationRequiredError,
 )
 from . import _loopback, _token
-from ._credential import _is_token, _require_endpoint
+from ._credential import _is_token, _require_endpoint, _scope_names
 from ._token import _TokenSession, _Tokens, _identity_tls, _read_tokens, _request_json
 
 _SIGN_IN_AGAIN = "Start a fresh NOMAD browser sign-in with credential.authenticate()."
@@ -59,6 +60,8 @@ class BrowserCredential:
     Supply an issuer and client ID, and choose explicit endpoints or discovery.
     A provider alias selects a Keycloak identity provider if the realm offers it.
     The callback uses an IPv4 loopback address and tokens are kept in memory.
+    ``requested_scopes`` adds OAuth scope names to the authorization request,
+    which always includes ``openid``.
     """
 
     def __init__(
@@ -76,7 +79,9 @@ class BrowserCredential:
         refresh_margin: float = 30,
         redirect_port: int = 0,
         redirect_path: str = "/",
+        requested_scopes: Iterable[Scope | str] | None = None,
     ) -> None:
+        self._requested_scopes = _scope_names(requested_scopes)
         _https_origin(issuer)
         if not _is_token(client_id) or (identity_provider is not None and not _is_token(identity_provider)):
             raise ValueError("Provide a nonempty client ID and, optionally, a provider alias.")
@@ -109,6 +114,16 @@ class BrowserCredential:
             lambda: ReauthenticationRequiredError(_SIGN_IN_AGAIN),
             block_failed_sign_in=True,
         )
+
+    @property
+    def requested_scopes(self) -> tuple[str, ...] | None:
+        """Return the extra scope names requested at sign-in, or None for only openid."""
+        return self._requested_scopes
+
+    @property
+    def granted_scopes(self) -> None:
+        """Return None because the SDK treats identity-service tokens as opaque."""
+        return None
 
     def _discover(self) -> tuple[str, str]:
         if self._endpoints is None:
@@ -153,11 +168,12 @@ class BrowserCredential:
         state = token_urlsafe(32)
         verifier = token_urlsafe(48)
         challenge = urlsafe_b64encode(sha256(verifier.encode()).digest()).decode().rstrip("=")
+        scope = " ".join(["openid", *(name for name in self._requested_scopes or () if name != "openid")])
 
         def make_url(redirect_uri: str) -> str:
             parameters = {
                 "client_id": self._client_id, "response_type": "code", "response_mode": "query",
-                "scope": "openid", "redirect_uri": redirect_uri, "state": state,
+                "scope": scope, "redirect_uri": redirect_uri, "state": state,
                 "code_challenge": challenge, "code_challenge_method": "S256",
             }
             if self._identity_provider is not None:
