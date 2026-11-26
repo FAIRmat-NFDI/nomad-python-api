@@ -37,7 +37,7 @@ def deployment(monkeypatch, nomad_http):
         if request.method == "POST":
             if path.endswith("/rotate"):
                 active.pop(path.split("/")[-2])
-            pat_id = f"fixture-id-{len(nomad_http.requests)}"
+            pat_id = f"{len(nomad_http.requests):024x}"
             active[pat_id] = f"fixture-secret-{len(nomad_http.requests)}"
             status = 200 if path.endswith("/rotate") else 201
             pat = metadata(pat_id)
@@ -50,7 +50,7 @@ def deployment(monkeypatch, nomad_http):
         if path != "/auth/pats":
             return httpx.Response(200, json=metadata(path.split("/")[-1]))
         cursor = request.url.params.get("page_after_value")
-        pat_id = "second-page-id" if cursor else "first-page-id"
+        pat_id = "507f1f77bcf86cd799439012" if cursor else "507f1f77bcf86cd799439011"
         return httpx.Response(200, json={
             "data": [metadata(pat_id)], "query": {},
             "pagination": {"total": 2, "next_page_after_value": None if cursor else "opaque-cursor"},
@@ -228,7 +228,7 @@ def test_oasis_extensions_and_errors(management, deployment):
     ("scope", "local scope policy"),
     ("deployment", "issuing deployment"),
     ("target", "metadata ID and account"),
-    ("uncertain", "Check the PAT list"),
+    ("uncertain", "Check the original PAT"),
 ])
 def test_rotation_error_recovery(nomad_http, capsys, failure, expected):
     def respond(request):
@@ -239,7 +239,7 @@ def test_rotation_error_recovery(nomad_http, capsys, failure, expected):
     nomad_http.respond = respond
     job_credential = BearerTokenCredential(
         "fixture-only-secret",
-        pat_id="fixture-id",
+        pat_id="507f1f77bcf86cd799439011",
         endpoint="https://oasis.example.org/api/v1" if failure == "deployment" else "prod",
     )
     with NomadClient(
@@ -265,6 +265,6 @@ def test_rotation_error_recovery(nomad_http, capsys, failure, expected):
         except PatNotFoundError:
             print("Check the target's PAT metadata ID and account.")
         except PatWriteOutcomeUnknownError:
-            print("Check the PAT list in NOMAD before attempting another rotation.")
+            print("Check the original PAT with pats.get(job_credential) before another write.")
         # --8<-- [end:pat_rotation_errors]
     assert expected in capsys.readouterr().out

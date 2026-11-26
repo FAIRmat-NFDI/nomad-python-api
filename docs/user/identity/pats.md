@@ -67,9 +67,12 @@ that already carries the PAT ID. Revocation accepts metadata as well.
 ```
 
 Rotation invalidates the old PAT when NOMAD processes the request.
-Update the jobs that used it with the replacement. Revocation invalidates
-the selected PAT. When the outcome of a write is uncertain, check the
-token list in NOMAD before attempting the action again.
+Update the jobs that used it with the replacement. NOMAD can also revoke
+the original PAT before replacement creation fails with HTTP `400`.
+If rotation raises `PatWriteOutcomeUnknownError`, use
+`pats.get(job_credential).revoked` to check the original PAT before another
+write. Inspect the PAT list in NOMAD if you need to reconcile the outcome.
+Revocation invalidates the selected PAT.
 
 ## Advanced dictionaries for bulk workflows
 
@@ -94,6 +97,14 @@ for `.filter(**filters)` when several runs reuse search criteria.
 `.by_page()` for whole batches and store the opaque cursor after a batch
 is processed. Resume with the same deployment, account, filters, and
 sort order. A listing with `limit` is for item iteration.
+
+!!! warning "A PAT cursor resumes against the current results"
+
+    NOMAD uses an offset into the current sorted list. Additions or removals
+    before that offset can skip or repeat records even with identical filters
+    and sorting. For complete coverage, scan while the results are stable.
+    If the list changed after your checkpoint, restart from the first page
+    and deduplicate by `pat.id`.
 
 ```python
 --8<-- "tests/snippets/identity/test_pat_management.py:pat_pages"

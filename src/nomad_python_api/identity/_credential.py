@@ -1,7 +1,12 @@
+import re
+from typing import TypeGuard
+
 from .._core._endpoint import normalize_endpoint
 from .._scopes import Scope
 from ..exceptions import CredentialEndpointMismatchError
 from ._pat_models import PatIssuedResult
+
+_PAT_ID = re.compile(r"[0-9a-fA-F]{24}")
 
 
 def _is_token(value: object) -> bool:
@@ -19,15 +24,13 @@ def _require_endpoint(bound_endpoint: str, requested_endpoint: str) -> None:
         raise CredentialEndpointMismatchError("The credential is bound to another NOMAD deployment.")
 
 
+def _is_pat_id(value: object) -> TypeGuard[str]:
+    return isinstance(value, str) and _PAT_ID.fullmatch(value) is not None
+
+
 def _validate_pat_id(pat_id: object) -> str:
-    if (
-        not isinstance(pat_id, str)
-        or not _is_token(pat_id)
-        or pat_id in (".", "..")
-        or any(char in pat_id for char in "/\\%?#")
-        or pat_id.startswith("nomad_pat_")
-    ):
-        raise ValueError("Supply the PAT metadata ID.")
+    if not _is_pat_id(pat_id):
+        raise ValueError("Supply the 24-character hexadecimal PAT metadata ID.")
     return pat_id
 
 
@@ -37,7 +40,7 @@ class BearerTokenCredential:
     Args:
         token: The original access token string without the Bearer prefix.
         endpoint: The deployment alias or complete API base URL. Defaults to Central.
-        pat_id: Optional metadata ID for using the credential as a PAT management target.
+        pat_id: Optional 24-character hexadecimal metadata ID for PAT management.
     """
 
     def __init__(self, token: str, *, endpoint: str = "prod", pat_id: str | None = None) -> None:

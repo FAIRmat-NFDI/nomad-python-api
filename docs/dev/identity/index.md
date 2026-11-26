@@ -113,8 +113,10 @@ sequenceDiagram
 
 The PAT management call sends the client's access token and the target's
 metadata ID. Only the job credential carries the target secret. Write calls
-have a single attempt. A response that cannot confirm the outcome requires
-checking server state before another attempt.
+have a single attempt. Rotation can revoke the original and then return
+HTTP `400` if replacement creation fails. The SDK treats that response
+and unusable issuance results as uncertain outcomes. The caller checks
+server state before another attempt.
 
 `Account` holds a weak reference to the originating PAT operations for
 `get_all_pats()`. Serialization omits that connection. PAT listing is lazy.

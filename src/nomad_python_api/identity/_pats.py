@@ -19,7 +19,13 @@ from ..exceptions import (
     PoolTimeoutError,
     TransportError,
 )
-from ._credential import BearerTokenCredential, _require_endpoint, _validate_pat_id
+from ._credential import (
+    BearerTokenCredential,
+    _is_pat_id,
+    _is_token,
+    _require_endpoint,
+    _validate_pat_id,
+)
 from ._pat_models import PatCreateOptions, PatIssuedResult, PatMetadata
 from ._pat_paging import PatList, PatPage
 
@@ -146,6 +152,9 @@ class PatOperations:
     ) -> PatIssuedResult:
         data = self._send(name, pat_id=pat_id, json_body=json_body)
         result = self._parse(name, PatIssuedResult, data)
+        if not _is_pat_id(result.pat.id) or not _is_token(result.raw_token.get_secret_value()):
+            operation = _OPERATIONS[name]
+            raise PatWriteOutcomeUnknownError(operation.info.name, operation.success_status)
         result.pat._endpoint = self._pipeline.endpoint
         return result
 
@@ -180,6 +189,13 @@ class PatOperations:
         except (ClientAuthenticationError, AuthorizationError) as error:
             raise type(error)(error.operation, error.status_code, guidance=_MANAGEMENT_GUIDANCE) from None
         except HttpResponseError as error:
+            if name == "rotate" and error.status_code == 400:
+                # NOMAD can revoke the original before replacement creation fails.
+                raise PatWriteOutcomeUnknownError(
+                    error.operation,
+                    error.status_code,
+                    guidance="Check the original PAT's status with pats.get() before another write.",
+                ) from None
             if error.status_code in (400, 422):
                 raise PatRequestError(error.operation, error.status_code, guidance=_REQUEST_GUIDANCE[name]) from None
             if error.status_code == 404 and pat_id is not None:

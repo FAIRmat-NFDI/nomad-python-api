@@ -104,13 +104,15 @@ filters), and `pagination`. `PatPage` exposes the records as `items`.
 Pagination includes `total` and optional `page_size`, `order_by`,
 `order`, `page_after_value`, `page`, `page_offset`,
 `next_page_after_value`, `page_url`, `next_page_url`, `prev_page_url`,
-and `first_page_url`. The SDK uses only the opaque cursor for follow-up
-requests to the configured deployment.
+and `first_page_url`. The SDK uses the opaque cursor for follow-up requests
+to the configured deployment. NOMAD computes it from an offset in the
+current sorted results. See the [checkpoint guide](pats.md#advanced-paging-and-checkpointing)
+for the effects of list changes.
 
 ### GET /auth/pats/{pat_id} { #get-pat }
 
 `pats.get(target)` requires `tokens:read`. It sends the target's
-metadata ID as `pat_id` without query parameters or a body. HTTP `200`
+24-character hexadecimal metadata ID as `pat_id` without query parameters or a body. HTTP `200`
 returns `PatMetadata`.
 
 ### POST /auth/pats/{pat_id}/rotate { #rotate-pat }
@@ -140,8 +142,10 @@ has an empty response and the SDK returns `None`.
 
 Swagger advertises `400` for invalid requests or inactive rotation
 targets, `404` for unavailable targets, and `422` for validation
-failures. The SDK also handles authentication, authorization, throttling,
-and uncertain write outcomes. See [PAT errors](api.md#pat-errors).
+failures. For rotation, HTTP `400` also covers failure after the original
+PAT was revoked. The SDK raises `PatWriteOutcomeUnknownError` in that case
+and when an issuance response contains an unusable credential.
+See [PAT errors](api.md#pat-errors).
 
 ## Browser login requests { #browser-login-rest }
 

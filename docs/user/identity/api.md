@@ -238,7 +238,7 @@ and issue a PAT using typed options. The example prints metadata and expiry.
 
 <strong class="api-reference-label">Signature</strong> `get(target) -> PatMetadata`
 
-<strong class="api-reference-label">Parameters</strong> Required `target` is a metadata ID (`str`), a [`PatMetadata`](#pat-metadata) instance, or a [`BearerTokenCredential`](#bearer-token-credential) carrying a PAT ID.
+<strong class="api-reference-label">Parameters</strong> Required `target` is a 24-character hexadecimal metadata ID (`str`), a [`PatMetadata`](#pat-metadata) instance, or a [`BearerTokenCredential`](#bearer-token-credential) carrying that ID.
 
 <strong class="api-reference-label">Returns</strong> [`PatMetadata`](#pat-metadata) for the selected PAT, including its scopes and available timestamps. HTTP `200` contains metadata only.
 
@@ -254,7 +254,7 @@ and issue a PAT using typed options. The example prints metadata and expiry.
 
 <strong class="api-reference-label">Returns</strong> A [`PatIssuedResult`](#pat-issued-result) with replacement metadata and its one-time secret. The server returns `200` and invalidates the old PAT.
 
-<strong class="api-reference-label">Raises</strong> The target errors documented for [`get()`](#pat-get), `PatRequestError` when NOMAD rejects the rotation, or `PatWriteOutcomeUnknownError` if the outcome cannot be confirmed. See [shared PAT errors](#pat-errors).
+<strong class="api-reference-label">Raises</strong> The target errors documented for [`get()`](#pat-get) or `PatRequestError` for HTTP `422`. HTTP `400` and unusable replacement credentials raise `PatWriteOutcomeUnknownError`. NOMAD can revoke the original before replacement creation fails. Check its status with `pats.get(target)` before another write. See [shared PAT errors](#pat-errors).
 
 <strong class="api-reference-label">Required scopes</strong> `tokens:create` and `tokens:delete`.
 
@@ -302,6 +302,9 @@ Iterating a `PatList` yields one [`PatMetadata`](#pat-metadata) at a time. Each 
 
 <strong class="api-reference-label">Returns</strong> An iterator yielding whole [`PatPage`](#pat-page) objects. Requests occur during iteration.
 
+NOMAD interprets the cursor as an offset into the current sorted results.
+Changes before that offset can skip or repeat PATs. See the [checkpoint guide](pats.md#advanced-paging-and-checkpointing).
+
 <strong class="api-reference-label">Raises</strong> `ValueError` for an invalid cursor, conflicting starting positions, or a listing with `limit`. The [PAT listing errors](#pat-errors) also apply during iteration.
 
 ### PAT models { #pat-models }
@@ -321,7 +324,7 @@ Import these models from `nomad_python_api.identity`. Pydantic model constructor
 
 | Field | Type | Required or default | Description |
 | --- | --- | --- | --- |
-| `id` | `str` | **Required** | PAT metadata ID for management calls. |
+| `id` | `str` | **Required** | 24-character hexadecimal PAT metadata ID for management calls. |
 | `name` | `str` | **Required** | PAT label. |
 | `scopes` | `tuple[str, ...]` | **Required** | Granted permissions. |
 | `revoked` | `bool` | **Required** | Whether the PAT has been explicitly revoked. |
@@ -372,10 +375,10 @@ The echoed filters consist of `search: str`, `state: Literal["active", "inactive
 | `ClientAuthenticationError`, `AuthorizationError` | HTTP `401` or `403`, respectively. | Check token validity and deployment for `401`. Use a management access token with the required scopes for `403`. |
 | `CredentialEndpointMismatchError` | A credential or returned metadata identifies a different deployment. | Connect to the issuing deployment. |
 | `ValueError` | Invalid options, missing PAT metadata ID, conflicting filters, or an extension collision. | Use the fields described above. |
-| `PatRequestError`, `PatNotFoundError` | HTTP `400` or `422`, or a target `404`, respectively. | Inspect supported options, target ID, active state, and account. |
+| `PatRequestError`, `PatNotFoundError` | HTTP `400` outside rotation or HTTP `422` for request errors. HTTP `404` for an unavailable target. | Inspect supported options, target ID, active state, and account. |
 | `RateLimitError`, `PoolTimeoutError` | HTTP `429` or a confirmed unsent pool wait timeout. | Let concurrent work settle and review the pool or request rate. |
 | `InvalidResponseError` | Read response cannot be interpreted or returns a repeated cursor. | Check deployment compatibility before continuing. |
-| `PatWriteOutcomeUnknownError` | A write may have succeeded before the response was lost or could be interpreted. | Inspect the PAT list in NOMAD before attempting another write. |
+| `PatWriteOutcomeUnknownError` | A write may have taken effect. This includes HTTP `400` during rotation or a success response containing an unusable issued credential. | Check the original PAT after a rotation error and inspect the PAT list in NOMAD before another write. |
 
 ## Sign-in credentials { #credential-reference .api-reference-section }
 
@@ -393,7 +396,7 @@ BearerTokenCredential(token: str, *, endpoint: str = "prod", pat_id: str | None 
 | --- | --- | --- | --- |
 | `token` | `str` | **Required** | The PAT or Keycloak access token, without the `Bearer` prefix or whitespace. |
 | `endpoint` | `str` | `"prod"` | Keyword-only. Central or a complete HTTPS NOMAD API v1 base URL. |
-| `pat_id` | `str \| None` | `None` | Metadata ID for referring to this PAT from a management call. |
+| `pat_id` | `str \| None` | `None` | 24-character hexadecimal metadata ID for referring to this PAT from a management call. |
 
 <strong class="api-reference-label">Returns</strong> A `BearerTokenCredential` instance bound to the selected deployment.
 

@@ -106,9 +106,12 @@ class PatNotFoundError(HttpResponseError):
 class PatWriteOutcomeUnknownError(NomadError):
     """A PAT write may have taken effect before its outcome could be confirmed."""
 
-    def __init__(self, operation: str, status_code: int | None = None) -> None:
+    def __init__(
+        self, operation: str, status_code: int | None = None, *, guidance: str | None = None
+    ) -> None:
         self.operation = operation
         self.status_code = status_code
         super().__init__(
-            f"The outcome of {operation} is unknown. Check your PATs in NOMAD before retrying."
+            f"The outcome of {operation} is unknown. "
+            f"{guidance or 'Check your PATs in NOMAD before retrying.'}"
         )
