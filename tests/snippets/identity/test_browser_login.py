@@ -32,6 +32,7 @@ def test_central_browser_login(nomad_http, browser_sign_in):
     from nomad_python_api import NomadClient, Scope
     from nomad_python_api.identity import BrowserCredential
 
+    # Let the first account request open the browser.
     credential = BrowserCredential(
         issuer="https://nomad-lab.eu/fairdi/keycloak/auth/realms/fairdi_nomad_prod",
         client_id="nomad_public",
@@ -57,6 +58,7 @@ def test_oasis_browser_login(nomad_http, browser_sign_in):
 
     endpoint = "https://oasis.example.edu/nomad-oasis/api/v1"
     issuer = "https://login.example.edu/realms/materials"
+    # Use the explicit Keycloak endpoints supplied by your Oasis.
     credential = BrowserCredential(
         endpoint=endpoint,
         issuer=issuer,

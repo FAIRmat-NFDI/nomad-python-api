@@ -4,13 +4,12 @@ import httpx
 import pytest
 
 pytestmark = pytest.mark.snippet
-_USER = "example-user"
+_USER = "user1"
 _PASSWORD = "offline-example-password"
 
 
 @pytest.fixture
 def password_login(nomad_http, monkeypatch):
-    monkeypatch.setenv("NOMAD_USERNAME", _USER)
     monkeypatch.setenv("NOMAD_PASSWORD", _PASSWORD)
 
     def respond(request):
@@ -30,10 +29,14 @@ def password_login(nomad_http, monkeypatch):
 
 def test_central_password_login(password_login):
     # --8<-- [start:central_password_login]
+    import os
+
     from nomad_python_api import NomadClient
     from nomad_python_api.identity import PasswordCredential
 
-    credential = PasswordCredential()  # Reads NOMAD_USERNAME and NOMAD_PASSWORD.
+    # Replace the example username with your own.
+    username = "user1"
+    credential = PasswordCredential(username=username, password=os.environ["NOMAD_PASSWORD"])
     with NomadClient(credential=credential) as client:
         account = client.identity.me()
     # --8<-- [end:central_password_login]
@@ -52,9 +55,10 @@ def test_oasis_password_login(password_login):
     from nomad_python_api import NomadClient
     from nomad_python_api.identity import PasswordCredential
 
+    # Send the password exchange to the selected Oasis.
     credential = PasswordCredential(
         endpoint="https://oasis.example.edu/nomad-oasis/api/v1",
-        username=os.environ["NOMAD_USERNAME"],
+        username="user1",
         password=os.environ["NOMAD_PASSWORD"],
     )
     credential.authenticate()

@@ -1,8 +1,16 @@
-# Sign in
+# Authentication
+
+<div id="sign-in"></div>
 
 ## Check your account with a PAT { #check-your-account }
 
-Create a PAT with `users:read` in **User Settings → Tokens**, then set `NOMAD_PAT` in your process environment. This example calls [GET `/users/me`](rest.md#get-users-me) and returns an [`Account`](api.md#account). [Create a PAT in NOMAD](https://docs.nomad-lab.eu/howto/manage/program/auth.html#create-a-pat)
+Create a PAT in **User Settings → Tokens**, then set `NOMAD_PAT` in your
+process environment. This example calls [GET `/users/me`](rest.md#get-users-me)
+and returns an [`Account`](api.md#account). [Create a PAT in NOMAD](https://docs.nomad-lab.eu/howto/manage/program/auth.html#create-a-pat)
+
+| Action | Required scope |
+| --- | --- |
+| Read your account in the examples below | `users:read` |
 
 ```python
 --8<-- "tests/snippets/identity/test_authentication.py:named_setup"
@@ -10,18 +18,9 @@ Create a PAT with `users:read` in **User Settings → Tokens**, then set `NOMAD_
 
 See the [`me()` return value](api.md#me-returns) and [`Account` fields and methods](api.md#account) for what you can do with the returned profile.
 
-## Advanced client options for workers
+<div id="advanced-client-options-for-workers"></div>
 
-Use a Python dictionary when a script builds the same client options for multiple
-workers or runs. Unpack it with `**options` and pass the job's credential
-separately where needed. The keys match the
-[`NomadClient` constructor](api.md#nomad-client-constructor).
-
-```python
---8<-- "tests/snippets/identity/test_authentication.py:dictionary_setup"
-```
-
-For process-based work, [construct the client inside each worker](connections.md#configure-an-hpc-worker).
+See the [client setup example](client.md#advanced-client-options-for-workers) for reusable client options.
 
 ## Sign in with your browser { #browser-login }
 
@@ -49,7 +48,7 @@ Run browser login where Python and the browser share a loopback interface, inclu
 
 **REST endpoints used** · [`POST /auth/token`](rest.md#password-login-rest) · [`GET /users/me`](rest.md#get-users-me)
 
-Set `NOMAD_USERNAME` and `NOMAD_PASSWORD` through a secure prompt or secret manager. The target deployment must enable Keycloak Direct Access Grants. [Keycloak password grant](https://www.keycloak.org/securing-apps/oidc-layers#_resource_owner_password_credentials) · [OAuth security guidance](https://www.rfc-editor.org/rfc/rfc9700.html#section-2.4)
+Replace the example username and set `NOMAD_PASSWORD` through a secure prompt or secret manager. The target deployment must enable Keycloak Direct Access Grants. [Keycloak password grant](https://www.keycloak.org/securing-apps/oidc-layers#_resource_owner_password_credentials) · [OAuth security guidance](https://www.rfc-editor.org/rfc/rfc9700.html#section-2.4)
 
 === "NOMAD Central"
 
@@ -59,7 +58,7 @@ Set `NOMAD_USERNAME` and `NOMAD_PASSWORD` through a secure prompt or secret mana
 
 === "Self-hosted NOMAD Oasis"
 
-    Pass the Oasis API URL to the credential. This example reads the pair from the environment and passes both arguments explicitly.
+    Pass the Oasis API URL and your username to the credential. The password comes from the environment.
 
     ```python
     --8<-- "tests/snippets/identity/test_password_login.py:oasis_password_login"
@@ -77,7 +76,7 @@ Set `NOMAD_KEYCLOAK_ACCESS_TOKEN` to the access token supplied by your sign-in a
 
 ## Connect to an Oasis with a PAT { #connect-to-an-oasis }
 
-Set `OASIS_PAT` to a PAT issued by your Oasis. If the API uses a private CA, set `NOMAD_CA_BUNDLE` to the path of its PEM bundle. See the [Oasis developer guide](../../dev/oasis/index.md) for custom REST contracts.
+Set `OASIS_PAT` to a PAT issued by your Oasis. Replace `endpoint` with its API URL. Set `ca_bundle` to the path of its PEM bundle for a private CA, or to `None` for a publicly trusted CA. See the [Oasis developer guide](../../dev/oasis/index.md) for custom REST contracts.
 
 ```python
 --8<-- "tests/snippets/identity/test_authentication.py:oasis_setup"
@@ -85,24 +84,8 @@ Set `OASIS_PAT` to a PAT issued by your Oasis. If the API uses a private CA, set
 
 In Jupyter, install the SDK in the active kernel's environment. In pyiron, create the client inside the worker using a job-provided secret.
 
-## Choose and inspect scopes
+<div id="troubleshoot-a-request"></div>
 
-`client.allowed_scopes` is a [read-only property](api.md#client-allowed-scopes). Call [`client.identity.get_operation_info("me")`](api.md#identity-get-operation-info) to see what an operation requires. `Scope.USERS_READ` is a member of the [`Scope` enum](api.md#scope).
+## Scope and access settings { #choose-and-inspect-scopes }
 
-With `NOMAD_PAT` set, compare your local policy with the scopes required by `me()` before looking up the account.
-
-```python
---8<-- "tests/snippets/identity/test_authentication.py:inspect_and_read_account"
-```
-
-`Allowed` and `Required` both show `users:read`. A successful lookup prints `Account returned: True`. `Username available` depends on the account returned by NOMAD.
-
-## Troubleshoot a request
-
-Run this example inside your open client context.
-
-```python
---8<-- "tests/snippets/identity/test_authentication.py:error_recovery"
-```
-
-See [exceptions](api.md#exceptions) for sign-in errors and API responses.
+See [Access and scopes](access.md#choose-and-inspect-scopes) for permission checks and troubleshooting.

@@ -1,4 +1,6 @@
-# Authentication REST reference
+# Identity REST reference
+
+<div id="authentication-rest-reference"></div>
 
 This reference covers REST endpoints called by the SDK. For token creation, rotation, and other sign-in workflows, see the [NOMAD authentication guide](https://docs.nomad-lab.eu/howto/manage/program/auth.html).
 
@@ -50,7 +52,69 @@ On success, NOMAD returns a JSON `User` object. The upstream schema permits fiel
 | `403` | Authorization rejected, for example when a token lacks the required scope | `AuthorizationError` |
 | `429` | Request throttled | `RateLimitError` |
 
-Other unexpected statuses raise `HttpResponseError`. See the [SDK troubleshooting examples](sign-in.md#troubleshoot-a-request) for local errors and recovery.
+Other unexpected statuses raise `HttpResponseError`. See the [SDK troubleshooting examples](access.md#troubleshoot-a-request) for local errors and recovery.
+
+## Users { #users-rest }
+
+| SDK method | REST route and scope | Inputs | Success |
+| --- | --- | --- | --- |
+| `users.get_by_id()` or `get(user_id=...)` | `GET /users/{user_id}`, `users:read` | Required path ID. | `200` with a public profile. |
+| `users.get()`, `get_many()`, and `search()` | `GET /users`, `users:read` | The route supports repeated `user_id`, `username`, and `email` query values and a `prefix`. The SDK uses exact routes for known people and `prefix` for discovery. Search can pass `extra_query`. | `200` with `data`, a list of user profiles. |
+| `users.invite()` | `PUT /users/invite`, `users:invite` | JSON invitation fields described below. | `200` with a user profile. |
+
+The public ID response contains `user_id`, `username`, `name`,
+`first_name`, `last_name`, `affiliation`, and `affiliation_address`.
+The directory list and invitation response use the broader
+[`User` wire model](#get-users-me). Directory lookups can omit email.
+Missing exact matches are surfaced as `UserNotFoundError` when the server
+returns an empty result, a null point response, or HTTP `404`. Other
+unexpected responses retain their SDK error type.
+
+The invitation body uses NOMAD's `User` schema. The standard user provider
+uses `email`, `username`, `first_name`, `last_name`, `affiliation`,
+`affiliation_address`, `user_id`, `repo_user_id`, and `created`.
+The SDK requires `email`, exposes those inputs through
+[`UserInviteOptions`](api.md#user-invite-options), and reads the display
+name and administrator flags from the result. Oasis-specific top-level
+fields can use `extra_json`. Published standard fields are reserved.
+HTTP `400` includes deployment restrictions and provider rejections.
+
+## Groups { #groups-rest }
+
+| SDK method | REST route | Required scope | Success |
+| --- | --- | --- | --- |
+| `groups.list()` | `GET /groups` | `groups:read` | `200` with `data` and optional `pagination`. |
+| `groups.get()` | `GET /groups/{group_id}` | `groups:read` | `200` with a group. |
+| `groups.create()` | `POST /groups` | `groups:write` | `201` with the created group. |
+| `groups.update()`, `groups.replace_members()` | `POST /groups/{group_id}/edit` | `groups:write` | `200` with the updated group. |
+| `groups.delete()` | `DELETE /groups/{group_id}` | `groups:delete` | Empty `204`. |
+
+### List query parameters
+
+`group_id` accepts a scalar or repeated IDs. `user_id` filters by a member's
+ID and `search_terms` by group name. The other fields are `page_size`
+(server default 10), `order_by`, `order` (server default `asc`),
+`page_after_value`, `page`, and `page_offset`. `extra_query` allows
+custom query parameters. See [listing options](api.md#group-list).
+
+### Create and edit body
+
+| REST field | SDK mapping | Behavior |
+| --- | --- | --- |
+| `group_name` | `name` | Optional nonempty group name. |
+| `description` | `description` | Optional description. |
+| `members_info` | Create with `members`, or use `replace_members()` | Complete array of `user_id` and `role`. Supported roles are `owner`, `maintainer`, and `member`. For create, the SDK obtains the owner from `GET /users/me` when the list has members. With no role-bearing members, NOMAD supplies the owner. |
+| `members` | `legacy_member_ids` | Deprecated ID-only array. Mutually exclusive with `members_info`. |
+| Deployment-specific JSON | `extra_json` | Additional top-level fields with standard keys reserved. |
+
+### Response and errors
+
+The SDK maps `group_id`, `group_name`, `description`, `owner`, `members`,
+and `members_info` to `group_id`, `name`, `description`, `owner_id`,
+`member_ids`, and `members`. An omitted role-bearing list leaves the
+SDK's `members` as `None`. The API returns HTTP `404` for an unavailable
+group. The SDK retains authentication, authorization, validation, and
+uncertain write errors. [NOMAD group contract](https://docs.nomad-lab.eu/reference/api.html#user-groups)
 
 ## PAT management { #pat-rest }
 

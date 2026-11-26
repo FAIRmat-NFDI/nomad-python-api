@@ -1,8 +1,11 @@
-# Authentication
+# Identity
+
+<div id="authentication"></div>
 
 ## Summary
 
-Create a credential, pass it to `NomadClient`, and call [`client.identity.me()`](api.md#identity-me) to get your NOMAD account.
+Create a credential and pass it to `NomadClient`. Use `client.identity`
+to read your account, find users, manage groups, or manage personal access tokens.
 
 | Sign-in option | Credential | When to use it |
 | --- | --- | --- |
@@ -13,15 +16,19 @@ Create a credential, pass it to `NomadClient`, and call [`client.identity.me()`]
 
 `NomadClient` uses the credential's deployment. Omit `endpoint` on the credential for NOMAD Central. Set it to the full HTTPS API v1 base URL for a self-hosted Oasis, development, or test deployment. Move any old `NomadClient(endpoint=...)` setting to its credential.
 
-## Examples
+## Workflows { #examples }
 
 <span id="check-your-account"></span><span id="browser-login"></span><span id="password-login"></span><span id="use-an-existing-keycloak-access-token"></span><span id="connect-to-an-oasis"></span><span id="choose-and-inspect-scopes"></span><span id="troubleshoot-a-request"></span>
 
-- [Sign in](sign-in.md) with a PAT, a browser, a username and password, or an existing Keycloak access token.
+- [Set up a client](client.md) and choose the deployment and connection settings.
+- [Authenticate](sign-in.md) with a PAT, a browser, a username and password, or a Keycloak access token.
+- [Check access and scopes](access.md) to understand what the SDK and NOMAD permit.
+- [Work with accounts and users](users.md) to read your profile, find collaborators, or send an invitation.
+- [Manage groups](groups.md) and their membership roles.
 
 <span id="manage-pats"></span><span id="inspect-use-rotate-and-revoke"></span><span id="advanced-oasis-extensions"></span>
 
-- [Manage PATs](pats.md) to create, filter, rotate, and revoke tokens.
+- [Manage personal access tokens](pats.md) to create, filter, rotate, and revoke tokens.
 
 <span id="tune-network-settings"></span><span id="share-or-borrow-http-connections"></span><span id="configure-an-hpc-worker"></span><span id="advanced-connection-summary"></span><span id="advanced-connection-use-cases"></span>
 

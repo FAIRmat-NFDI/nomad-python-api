@@ -112,14 +112,8 @@ class RequestPipeline:
     def is_closed(self) -> bool:
         return self._closed or self._http.is_closed
 
-    def send(
-        self,
-        operation: Operation,
-        *,
-        path_parameters: Mapping[str, str] | None = None,
-        query: httpx.QueryParams | None = None,
-        json_body: dict[str, object] | None = None,
-    ) -> object:
+    def check_operation(self, operation: Operation) -> None:
+        """Check client state and local scope policy before starting an operation."""
         if self.is_closed:
             raise RuntimeError("The NOMAD client is closed.")
         if self._transport is not None and self._transport.is_closed:
@@ -129,6 +123,17 @@ class RequestPipeline:
             missing = info.required_scopes - self.allowed_scopes
             if missing:
                 raise ScopeNotAllowedError(info.name, missing)
+
+    def send(
+        self,
+        operation: Operation,
+        *,
+        path_parameters: Mapping[str, str] | None = None,
+        query: httpx.QueryParams | None = None,
+        json_body: dict[str, object] | None = None,
+    ) -> object:
+        self.check_operation(operation)
+        info = operation.info
         token = self._credential._get_token(endpoint=self._endpoint, scopes=info.required_scopes)
         path = operation.path
         if path_parameters:

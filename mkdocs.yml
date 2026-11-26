@@ -17,15 +17,19 @@ nav:
   - Home: index.md
   - Usage:
       - Getting started: user/index.md
-      - Authentication:
+      - Identity:
           - Overview: user/identity/index.md
-          - Sign in: user/identity/sign-in.md
-          - Manage PATs: user/identity/pats.md
-          - Connections and HPC: user/identity/connections.md
-      - API Reference:
-          - Authentication: user/identity/api.md
-      - REST Reference:
-          - Authentication: user/identity/rest.md
+          - Clients:
+              - Set up a client: user/identity/client.md
+              - Connections and HPC: user/identity/connections.md
+          - Authentication: user/identity/sign-in.md
+          - Access and scopes: user/identity/access.md
+          - Accounts and users: user/identity/users.md
+          - Groups: user/identity/groups.md
+          - Personal access tokens: user/identity/pats.md
+          - Reference:
+              - Python API: user/identity/api.md
+              - REST API: user/identity/rest.md
   - Developer:
       - Develop the SDK: dev/index.md
       - Develop for NOMAD Oasis: dev/oasis/index.md

@@ -14,6 +14,8 @@ classDiagram
     class IdentityOperations {
         +me() Account
         +pats PatOperations
+        +users UserOperations
+        +groups GroupOperations
         +get_operation_info(name) OperationInfo
     }
     class RequestPipeline {
@@ -74,6 +76,9 @@ classDiagram
     IdentityOperations --> RequestPipeline : uses
     IdentityOperations --> Operation : selects
     IdentityOperations *-- PatOperations : owns
+    IdentityOperations *-- UserOperations : owns
+    IdentityOperations *-- GroupOperations : owns
+    GroupOperations --> UserOperations : resolves exact selectors
     PatOperations --> RequestPipeline : uses
     PatOperations ..> PatIssuedResult : issues
     Account ..> PatOperations : delegates listing
@@ -124,6 +129,40 @@ It reapplies the same validated filters and uses only opaque continuation
 cursors against the configured deployment. It never follows server-provided
 pagination URLs. The [REST reference](../../user/identity/rest.md#pat-rest)
 describes the request fields and extension points.
+
+### Group membership writes
+
+```mermaid
+sequenceDiagram
+    participant Caller
+    participant Groups as GroupOperations
+    participant Users as UserOperations
+    participant NOMAD
+    Caller->>Groups: create or replace_members
+    Groups->>Groups: Check local group scope and validate references
+    opt Create with role-bearing members
+        Groups->>Users: Read the signed-in account
+        Users->>NOMAD: GET /users/me
+        NOMAD-->>Users: Signed-in user profile
+        Users-->>Groups: Owner ID
+    end
+    opt Inputs contain exact selectors
+        Groups->>Users: Resolve distinct selectors
+        Users->>NOMAD: GET user lookup
+        NOMAD-->>Users: User profiles
+        Users-->>Groups: Ordered users
+    end
+    Groups->>Groups: Validate unique IDs and owner
+    Groups->>NOMAD: POST group or group edit
+    NOMAD-->>Groups: Group response
+    Groups-->>Caller: Group model
+```
+
+Loaded users and accounts supply their IDs locally. SDK-issued objects are
+bound to their deployment. Group and PAT listings share cursor traversal
+and keep their own filter and response models. The transport bounds responses
+and leaves membership authorization to the server. Replacement sends a full
+list. An uncertain write needs reconciliation on the server before any retry.
 
 ## Request sequence
 

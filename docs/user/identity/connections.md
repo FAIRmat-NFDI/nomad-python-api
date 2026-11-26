@@ -1,5 +1,10 @@
 # Connections and HPC
 
+| Example action | Required scope |
+| --- | --- |
+| Configure a client, connection pool, or transport | None |
+| Check account access with `identity.me()` | `users:read` |
+
 ## Tune network settings { #tune-network-settings }
 
 **Start with `NomadClient(credential=…)`.** A notebook, script, or HPC worker normally uses one client and reuses its pool for every call. Each client defaults to 10 connections and keeps up to 5 idle for reuse.
@@ -28,7 +33,7 @@ Transport injection lets your application supply the connections used by `NomadC
 | Shared transport | `transport=…` | Pool limits and CA trust on `NomadTransport`. API timeouts on each client | The application |
 | Borrowed HTTPX client | `http_client=…` | Pool limits, TLS trust, proxy, and timeouts on `httpx.Client` or its transport | The application |
 
-For either example, set `NOMAD_PAT` to a Central token with `users:read`. Each call returns the authenticated account.
+For either example, set `NOMAD_PAT` to a Central token. Each call returns the authenticated account.
 
 === "Share a connection pool"
 
@@ -52,7 +57,7 @@ For either example, set `NOMAD_PAT` to a Central token with `users:read`. Each c
 
     Suppose one Linux HPC coordinator runs two parts of a job, each with its own PAT and scope policy. With two independently configured eight-connection clients, the process could open 16 connections. A single `NomadTransport` capped at eight gives both parts one eight-connection budget. Each client keeps its own cookie jar and can have a different timeout. The calls share the connection budget, so one client can occupy all eight slots.
 
-    Set `NOMAD_PAT` and `NOMAD_SECOND_PAT` to tokens with `users:read` from the same deployment. Set `NOMAD_API_URL` for an Oasis. Each call returns the account associated with its PAT. The first client waits up to three seconds for a connection. The second waits up to ten. Keep the outer transport open until both clients finish. For separate worker processes, use [worker-local configuration](#configure-an-hpc-worker) and size the total budget in the scheduler.
+    Set `NOMAD_PAT` and `NOMAD_SECOND_PAT` to tokens from the same deployment. Replace `endpoint` with the API URL for an Oasis. Each call returns the account associated with its PAT. The first client waits up to three seconds for a connection. The second waits up to ten. Keep the outer transport open until both clients finish. For separate worker processes, use [worker-local configuration](#configure-an-hpc-worker) and size the total budget in the scheduler.
 
     ```python
     --8<-- "tests/snippets/identity/test_authentication.py:share_transport"
@@ -60,7 +65,7 @@ For either example, set `NOMAD_PAT` to a Central token with `users:read`. Each c
 
 === "Institutional proxy or application tracing"
 
-    An institute may require the application's approved HTTP proxy to reach its Oasis. Set `NOMAD_API_URL` to that deployment's HTTPS API v1 URL, `NOMAD_PAT` to its PAT with `users:read`, and `NOMAD_HTTPS_PROXY` to the approved proxy URL. Use a trusted HTTPX session with certificate verification enabled. If the institute uses a private CA, configure that trust on the HTTPX client. The example returns the account and records only the response status when application logging is enabled.
+    An institute may require the application's approved HTTP proxy to reach its Oasis. Set `NOMAD_PAT` to that deployment's token. Replace `endpoint` and `proxy_url` with the API URL and approved proxy URL. Use a trusted HTTPX session with certificate verification enabled. If the institute uses a private CA, configure that trust on the HTTPX client. The example returns the account and records only the response status when application logging is enabled.
 
     The SDK builds each NOMAD request with its own bearer token, headers, and query parameters. The borrowed client's default headers, cookies, query parameters, and authentication apply to the application's own HTTPX calls. Keep hooks focused on metadata. If a hook reads the body or raises an exception, it can buffer data before SDK validation or interrupt a call whose request already reached NOMAD.
 
@@ -74,7 +79,7 @@ For either example, set `NOMAD_PAT` to a Central token with `users:read`. Each c
 
 ## Configure an HPC worker { #configure-an-hpc-worker }
 
-Create the credential and client **inside each Slurm, pyiron, or multiprocessing worker after it starts**. Pass resource IDs and job inputs between processes. Supply the PAT through the site's secret mechanism and use the minimum scopes the job needs. For this account check, use a token with `users:read`. Set `NOMAD_API_URL` to the complete HTTPS API base URL for a self-hosted Oasis. Omit it to use NOMAD Central.
+Create the credential and client **inside each Slurm, pyiron, or multiprocessing worker after it starts**. Pass resource IDs and job inputs between processes. Supply the PAT through the site's secret mechanism and use the minimum scopes the job needs. The example uses `endpoint = "prod"` for NOMAD Central. Replace it with the full HTTPS API v1 URL for an Oasis.
 
 ```python
 --8<-- "tests/snippets/identity/test_authentication.py:hpc_worker"

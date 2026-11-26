@@ -30,12 +30,12 @@ For an Oasis that offers legacy password login, enable Direct Access Grants on t
 
 1. Find the method in the user guide and follow **REST endpoint used** to the reference. It gives the wire path, method, scopes, request fields, and response mapping.
 2. Open the OpenAPI document for the Oasis you actually target. Compare the route including method, the input location and media type, and the response schema. Verify the scope in your deployment's docs or server code if OpenAPI does not declare it.
-3. If the contracts match, configure the credential with the full deployment API base URL. For identity, confirm that `GET /users/me` accepts the intended access token with `users:read`. The SDK maps a non-empty user ID and an optional username into `Account`.
+3. If the contracts match, configure the credential with the full deployment API base URL. Confirm that `GET /users/me` accepts the intended access token with `users:read`. The SDK maps the returned profile into `Account`.
 4. For an optional extension, put the value in the mapping that corresponds to its wire location. A custom query parameter belongs in `extra_query` when the operation supports it. A JSON object field belongs in `extra_json`. Adding a field to the client constructor does not put it in a REST request.
 
 For example, if a future upload method wraps `POST /uploads` and your Oasis documents a query parameter named `c`, that method could accept `extra_query={"c": "institute-value"}`. Verify the placement in your Oasis contract. The current identity account call takes no extension fields because its REST request has no query parameters or body.
 
-An extension value cannot replace the operation's HTTP method, URL, credential, scope requirements, or SDK-owned input fields. When upstream promotes an extension field to a named argument, keep accepting the old mapping form and reject calls that supply both forms.
+An extension value cannot replace the operation's HTTP method, URL, credential, scope requirements, or SDK-owned input fields. When upstream promotes an extension field to a named argument, keep accepting the old mapping form and reject calls that supply both forms. User prefix search and group listing accept query extensions. Group writes and invitations accept top-level JSON extensions where the target deployment offers them. Standard NOMAD rejects invitations in Oasis mode. [Identity REST reference](../../user/identity/rest.md#users-rest)
 
 ## Example: extend a JSON request body
 
@@ -67,11 +67,12 @@ Review the fork's workflow and environment settings before enabling deployments.
 | Change | Where to work |
 | --- | --- |
 | Change the identity route or how its response maps to the account | `src/nomad_python_api/identity/_operations.py` and, if the returned model changes, `identity/_account.py`. |
+| Change directory lookups or group membership | `identity/_users.py` or `identity/_groups.py`. Keep the SDK field mapping beside the affected operation or model. |
 | Add a typed operation for a different resource | Add a feature package alongside `identity/`. Keep each route, transport inputs, and required scopes together, then attach the operation group through `_client.py`. |
 | Update deployment binding or a shared HTTP rule | Review `src/nomad_python_api/_core/` and its security tests first. Changes here affect every feature using the pipeline. |
 | Change an example or the REST contract page | Update the feature's snippets under `tests/snippets/`, its public guide and REST reference under `docs/user/`, and its architecture notes under `docs/dev/`. |
 
-Start with the [system architecture](../architecture/index.md) for dependency direction and the [identity architecture](../identity/index.md) for a complete example. Keep fork-only behavior in the relevant operation or response mapper so the public imports and security controls stay stable. The current pipeline sends a bodyless identity request. When a new operation needs inputs, add explicit, typed query or body handling to the pipeline and keep the feature's serialization rules beside its operation declaration.
+Start with the [system architecture](../architecture/index.md) for dependency direction and the [identity architecture](../identity/index.md) for a complete example. Keep fork-only behavior in the relevant operation or response mapper so the public imports and security controls stay stable. The shared pipeline sends the declared path parameters, query parameters, and JSON body. Keep the feature's serialization rules beside its operation declaration.
 
 ## Verify and maintain the fork
 

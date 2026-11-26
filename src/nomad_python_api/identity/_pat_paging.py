@@ -6,7 +6,7 @@ from typing import Literal
 import httpx
 from pydantic import BaseModel, ConfigDict, Field, ValidationError
 
-from ..exceptions import InvalidResponseError
+from ._paging import POSITIONS, Pagination, iter_pages, with_cursor
 from ._pat_models import PatMetadata
 
 
@@ -26,23 +26,8 @@ class PatFilters(BaseModel):
     expires_before: datetime | None = None
 
 
-class PatPagination(BaseModel):
-    """Pagination metadata returned by NOMAD."""
-
-    model_config = ConfigDict(frozen=True, hide_input_in_errors=True)
-
-    total: int = Field(ge=0, strict=True)
-    page_size: int | None = None
-    order_by: str | None = None
-    order: Literal["asc", "desc"] | None = None
-    page_after_value: str | None = None
-    page: int | None = None
-    page_offset: int | None = None
-    next_page_after_value: str | None = None
-    page_url: str | None = Field(default=None, repr=False)
-    next_page_url: str | None = Field(default=None, repr=False)
-    prev_page_url: str | None = Field(default=None, repr=False)
-    first_page_url: str | None = Field(default=None, repr=False)
+class PatPagination(Pagination):
+    """Pagination metadata returned by NOMAD for PATs."""
 
 
 class PatPage(BaseModel):
@@ -73,7 +58,6 @@ class _PatListOptions(PatFilters):
     page_offset: int | None = Field(default=None, ge=0, strict=True)
 
 
-_POSITIONS = ("page_after_value", "page", "page_offset")
 _RESERVED_QUERY_FIELDS = _PatListOptions.model_fields.keys() | {
     "limit", "extra_query", "authorization", "access_token", "token", "raw_token",
 }
@@ -97,7 +81,7 @@ class PatList:
         except ValidationError:
             raise ValueError("Invalid PAT listing options.") from None
         params = validated.model_dump(mode="json", exclude_none=True)
-        if sum(name in params for name in _POSITIONS) > 1:
+        if sum(name in params for name in POSITIONS) > 1:
             raise ValueError("Choose one PAT pagination position.")
         if extra_query is not None:
             if not isinstance(extra_query, Mapping) or any(
@@ -135,27 +119,7 @@ class PatList:
         """Yield whole pages, optionally resuming from a previous page's cursor."""
         if self._limit is not None:
             raise ValueError("Use limit for item iteration or by_page for whole pages.")
-        params = dict(self._params)
-        if continuation_token is not None:
-            if not isinstance(continuation_token, str) or not continuation_token:
-                raise ValueError("Supply a nonempty continuation token.")
-            if any(key in params for key in _POSITIONS):
-                raise ValueError("Choose a continuation token or a PAT pagination position.")
-            params["page_after_value"] = continuation_token
-        return self._pages(params)
+        return self._pages(with_cursor(self._params, continuation_token, resource="PAT"))
 
     def _pages(self, params: dict[str, object]) -> Iterator[PatPage]:
-        params = dict(params)
-        seen = {params.get("page_after_value")}
-        while True:
-            page = self._fetch(httpx.QueryParams(params).merge(self._extra))
-            cursor = page.next_cursor
-            if cursor and cursor in seen:
-                raise InvalidResponseError("identity.pats.list received a repeated continuation token.")
-            yield page
-            if not cursor or params.get("page_size") == 0:
-                return
-            seen.add(cursor)
-            params.pop("page", None)
-            params.pop("page_offset", None)
-            params["page_after_value"] = cursor
+        return iter_pages(self._fetch, params, self._extra, operation="identity.pats.list")
