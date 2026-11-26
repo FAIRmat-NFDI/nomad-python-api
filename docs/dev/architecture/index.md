@@ -50,7 +50,7 @@ See [Identity architecture](../identity/index.md) for class relationships, call 
 
 ## Network and transfer design
 
-The default client owns its pool. A caller can also share a `NomadTransport` between independent NOMAD sessions or inject a trusted synchronous HTTPX client. Both modes borrow caller-owned resources. The pipeline still checks the credential's complete deployment URL and local scopes before attaching a bearer token. Close borrowing clients before closing their shared transport or HTTPX client. [Transport examples](../../user/identity/index.md#share-or-borrow-http-connections)
+The default client owns its pool. A caller can also share a `NomadTransport` between independent NOMAD sessions or inject a trusted synchronous HTTPX client. Both modes borrow caller-owned resources. The pipeline still checks the credential's complete deployment URL and local scopes before attaching a bearer token. Close borrowing clients before closing their shared transport or HTTPX client. [Transport examples](../../user/identity/connections.md#share-or-borrow-http-connections)
 
 ```mermaid
 flowchart LR
@@ -67,7 +67,7 @@ Sharing `NomadTransport` keeps connection reuse below the HTTP session boundary.
 
 HTTPX can store cookies from a NOMAD response in the borrowed client's jar. On subsequent direct application requests, HTTPX can send those cookies when its cookie rules match. A dedicated HTTPX client isolates that jar from other application requests. `NomadTransport` shares connections across NOMAD sessions while each session owns its own jar. [Response-cookie behavior](../../user/identity/api.md#borrowed-httpx-response-cookies)
 
-For HPC, size the process-local pool and the number of active workers together. Eight workers with four connections each can open up to 32 connections. Monitor pool timeouts, throttling responses, bytes per second, and status-call latency before increasing parallelism. One coordinator can enforce a shared connection budget and fetch common inputs once for compute workers. A connection budget controls concurrent work. Rate controls can be enforced separately by the deployment or workflow. [Worker setup and scenarios](../../user/identity/index.md#configure-an-hpc-worker)
+For HPC, size the process-local pool and the number of active workers together. Eight workers with four connections each can open up to 32 connections. Monitor pool timeouts, throttling responses, bytes per second, and status-call latency before increasing parallelism. One coordinator can enforce a shared connection budget and fetch common inputs once for compute workers. A connection budget controls concurrent work. Rate controls can be enforced separately by the deployment or workflow. [Worker setup and scenarios](../../user/identity/connections.md#configure-an-hpc-worker)
 
 The client passes [connection limits and phase timeouts](../../user/identity/api.md#connection-limits) into the shared request pipeline. A pool timeout from an SDK-managed session occurs before sending the data request. When a borrowed HTTPX client's hook raises an HTTP status error for the original NOMAD response, the normal SDK status mapping applies. Other borrowed-client failures surface as `TransportError` because the server may already have received the request. Keep these outcomes distinct so a caller can make the right recovery decision.
 

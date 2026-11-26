@@ -10,6 +10,9 @@ __all__ = [
     "HttpResponseError",
     "InvalidResponseError",
     "NomadError",
+    "PatNotFoundError",
+    "PatRequestError",
+    "PatWriteOutcomeUnknownError",
     "PasswordAuthenticationError",
     "PoolTimeoutError",
     "RateLimitError",
@@ -52,10 +55,10 @@ class PasswordAuthenticationError(NomadError):
 class HttpResponseError(NomadError):
     """NOMAD returned an unsuccessful or unexpected status."""
 
-    def __init__(self, operation: str, status_code: int) -> None:
+    def __init__(self, operation: str, status_code: int, *, guidance: str | None = None) -> None:
         self.operation = operation
         self.status_code = status_code
-        super().__init__(f"{operation} failed with HTTP {status_code}. {self._guidance}")
+        super().__init__(f"{operation} failed with HTTP {status_code}. {guidance or self._guidance}")
 
     _guidance = "Check the operation and deployment."
 
@@ -87,4 +90,28 @@ class PoolTimeoutError(TransportError):
 
 
 class InvalidResponseError(NomadError):
-    """The response could not be safely interpreted as the expected account."""
+    """The response could not be safely interpreted as the expected model."""
+
+
+class PatRequestError(HttpResponseError):
+    """NOMAD rejected the PAT request or the state of its target."""
+
+
+class PatNotFoundError(HttpResponseError):
+    """NOMAD could not find a PAT accessible to the caller."""
+
+    _guidance = "Check the PAT ID, account, and deployment."
+
+
+class PatWriteOutcomeUnknownError(NomadError):
+    """A PAT write may have taken effect before its outcome could be confirmed."""
+
+    def __init__(
+        self, operation: str, status_code: int | None = None, *, guidance: str | None = None
+    ) -> None:
+        self.operation = operation
+        self.status_code = status_code
+        super().__init__(
+            f"The outcome of {operation} is unknown. "
+            f"{guidance or 'Check your PATs in NOMAD before retrying.'}"
+        )

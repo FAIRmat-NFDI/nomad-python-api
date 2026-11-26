@@ -30,18 +30,18 @@ On success, NOMAD returns a JSON `User` object. The upstream schema permits fiel
 
 | REST field | Type when present and non-null | Meaning | SDK mapping |
 | --- | --- | --- | --- |
-| `name` | String | Display name | REST only |
-| `first_name` | String | Given names | REST only |
-| `last_name` | String | Surname | REST only |
-| `email` | String | Email address | REST only |
-| `affiliation` | String | Organization or institute | REST only |
-| `affiliation_address` | String | Organization address | REST only |
+| `name` | String | Display name | `Account.name` |
+| `first_name` | String | Given names | `Account.first_name` |
+| `last_name` | String | Surname | `Account.last_name` |
+| `email` | String | Email address | `Account.email` |
+| `affiliation` | String | Organization or institute | `Account.affiliation` |
+| `affiliation_address` | String | Organization address | `Account.affiliation_address` |
 | `user_id` | String | Persistent NOMAD account identifier | `Account.user_id` |
 | `username` | String | Account username | `Account.username` |
-| `created` | Date-time string | Account creation time | REST only |
-| `repo_user_id` | String | Legacy repository identifier | REST only |
-| `is_admin` | Boolean | NOMAD admin flag | REST only |
-| `is_oasis_admin` | Boolean | Oasis admin flag, defaults to `false` in the upstream schema | REST only |
+| `created` | Date-time string | Account creation time | `Account.created` as `datetime` |
+| `repo_user_id` | String | Legacy repository identifier | `Account.repo_user_id` |
+| `is_admin` | Boolean | NOMAD admin flag | `Account.is_admin` |
+| `is_oasis_admin` | Boolean | Oasis admin flag | `Account.is_oasis_admin` |
 
 | Status | Meaning | SDK handling |
 | --- | --- | --- |
@@ -50,7 +50,102 @@ On success, NOMAD returns a JSON `User` object. The upstream schema permits fiel
 | `403` | Authorization rejected, for example when a token lacks the required scope | `AuthorizationError` |
 | `429` | Request throttled | `RateLimitError` |
 
-Other unexpected statuses raise `HttpResponseError`. See the [SDK troubleshooting examples](index.md#troubleshoot-a-request) for local errors and recovery.
+Other unexpected statuses raise `HttpResponseError`. See the [SDK troubleshooting examples](sign-in.md#troubleshoot-a-request) for local errors and recovery.
+
+## PAT management { #pat-rest }
+
+All five routes use the current user's management access token as
+`Authorization: Bearer <access-token>`. Use the API base URL of the issuing
+deployment. The credential used as a target supplies a metadata ID only.
+[NOMAD PAT management guide](https://docs.nomad-lab.eu/howto/manage/program/auth.html#use-a-keycloak-access-token-when-required)
+
+### POST /auth/pats { #create-pat }
+
+[`pats.create(options, extra_json=None)`](api.md#pat-operations) requires
+`tokens:create` and returns `201` with `pat` metadata and `raw_token`.
+It has no path or query fields. The JSON request body accepts the following.
+
+| REST field | Type | Required | SDK input |
+| --- | --- | --- | --- |
+| `metadata` | Object | Yes | Built from `PatCreateOptions` or the equivalent mapping |
+| `metadata.name` | String | Yes | `name` |
+| `metadata.scopes` | Array of strings | Yes | `scopes`, including `Scope` enums |
+| `metadata.description` | String or null | No | `description` |
+| `expires_in_days` | Integer or null | No | `expires_in_days`. Omitted uses NOMAD's documented default of 30. |
+
+```json
+{
+  "metadata": {
+    "name": "Diffraction analysis",
+    "scopes": ["users:read", "uploads:read"]
+  },
+  "expires_in_days": 30
+}
+```
+
+On a deployment that documents an extra top-level field, pass it
+through `extra_json`. See the [worked Oasis example](pats.md#advanced-oasis-extensions).
+
+### GET /auth/pats { #list-pats }
+
+[`pats.list()`](api.md#pat-list) and `account.get_all_pats()` require
+`tokens:read`. The route accepts query parameters and has no body.
+
+| Query parameters | SDK mapping |
+| --- | --- |
+| `search`, `revoked`, `state` | Named filters or `.filter()`. |
+| `created_after`, `created_before`, `last_used_after`, `last_used_before`, `expires_after`, `expires_before` | Named date filters or `.filter()`. Written as ISO 8601 date-times. |
+| `order_by`, `order`, `page_size` | Named listing options. |
+| `page_after_value`, `page`, `page_offset` | Starting position. A continuation token maps to `page_after_value`. |
+| Deployment-specific query fields | `extra_query`. Standard names are reserved. |
+
+HTTP `200` returns `data` (the metadata records), `query` (echoed
+filters), and `pagination`. `PatPage` exposes the records as `items`.
+Pagination includes `total` and optional `page_size`, `order_by`,
+`order`, `page_after_value`, `page`, `page_offset`,
+`next_page_after_value`, `page_url`, `next_page_url`, `prev_page_url`,
+and `first_page_url`. The SDK uses the opaque cursor for follow-up requests
+to the configured deployment. NOMAD computes it from an offset in the
+current sorted results. See the [checkpoint guide](pats.md#advanced-paging-and-checkpointing)
+for the effects of list changes.
+
+### GET /auth/pats/{pat_id} { #get-pat }
+
+`pats.get(target)` requires `tokens:read`. It sends the target's
+24-character hexadecimal metadata ID as `pat_id` without query parameters or a body. HTTP `200`
+returns `PatMetadata`.
+
+### POST /auth/pats/{pat_id}/rotate { #rotate-pat }
+
+`pats.rotate(target)` requires `tokens:create` and `tokens:delete`.
+It sends `pat_id` without query parameters or a body. HTTP `200`
+returns the replacement `pat` and one-time `raw_token`, as with creation.
+
+### DELETE /auth/pats/{pat_id} { #revoke-pat }
+
+`pats.revoke(target)` and `pats.delete(target)` require `tokens:delete`.
+They send `pat_id` without query parameters or a body. HTTP `204`
+has an empty response and the SDK returns `None`.
+
+### PAT response fields and errors
+
+| Response field | Wire type | SDK mapping |
+| --- | --- | --- |
+| `id`, `name` | Strings | Metadata ID and label |
+| `scopes` | Array of strings | Tuple of granted scope names |
+| `description` | String or null | Optional description |
+| `revoked` | Boolean | Revocation flag |
+| `created_at` | Date-time string | Creation timestamp |
+| `expired_at`, `last_used_at` | Date-time string or null | Optional timestamps |
+| `pat` | Metadata object | `PatIssuedResult.pat` on create and rotate |
+| `raw_token` | Secret string | `PatIssuedResult.raw_token` on create and rotate |
+
+Swagger advertises `400` for invalid requests or inactive rotation
+targets, `404` for unavailable targets, and `422` for validation
+failures. For rotation, HTTP `400` also covers failure after the original
+PAT was revoked. The SDK raises `PatWriteOutcomeUnknownError` in that case
+and when an issuance response contains an unusable credential.
+See [PAT errors](api.md#pat-errors).
 
 ## Browser login requests { #browser-login-rest }
 

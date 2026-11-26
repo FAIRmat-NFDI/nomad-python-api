@@ -1,8 +1,9 @@
 import json
-from collections.abc import Iterable
+from collections.abc import Iterable, Mapping
 from contextlib import closing
 from os import PathLike
 from typing import Protocol
+from urllib.parse import quote
 
 import httpx
 from httpx import Client as _HTTPClient
@@ -103,8 +104,23 @@ class RequestPipeline:
             **network,
         )
 
-    def send(self, operation: Operation) -> object:
-        if self._closed or self._http.is_closed:
+    @property
+    def endpoint(self) -> str:
+        return self._endpoint
+
+    @property
+    def is_closed(self) -> bool:
+        return self._closed or self._http.is_closed
+
+    def send(
+        self,
+        operation: Operation,
+        *,
+        path_parameters: Mapping[str, str] | None = None,
+        query: httpx.QueryParams | None = None,
+        json_body: dict[str, object] | None = None,
+    ) -> object:
+        if self.is_closed:
             raise RuntimeError("The NOMAD client is closed.")
         if self._transport is not None and self._transport.is_closed:
             raise RuntimeError("The NOMAD transport is closed.")
@@ -114,10 +130,15 @@ class RequestPipeline:
             if missing:
                 raise ScopeNotAllowedError(info.name, missing)
         token = self._credential._get_token(endpoint=self._endpoint, scopes=info.required_scopes)
+        path = operation.path
+        if path_parameters:
+            path = path.format(**{key: quote(value, safe="") for key, value in path_parameters.items()})
         try:
-            with closing(self._send_request(operation, token)) as response:
-                if response.status_code != 200:
+            with closing(self._send_request(operation, token, path, query, json_body)) as response:
+                if response.status_code != operation.success_status:
                     raise _status_error(info.name, response.status_code)
+                if operation.success_status == 204:
+                    return None
                 if response.headers.get("Content-Encoding", "identity").lower() != "identity":
                     raise InvalidResponseError(f"{info.name} returned an unsupported content encoding.")
                 content = bytearray()
@@ -141,8 +162,15 @@ class RequestPipeline:
             raise InvalidResponseError(f"{info.name} returned invalid JSON.")
         raise failure
 
-    def _send_request(self, operation: Operation, token: str) -> httpx.Response:
-        url = httpx.URL(self._endpoint + operation.path)
+    def _send_request(
+        self,
+        operation: Operation,
+        token: str,
+        path: str,
+        query: httpx.QueryParams | None,
+        json_body: dict[str, object] | None,
+    ) -> httpx.Response:
+        url = httpx.URL(self._endpoint + path)
         request = None
         status_code = None
         try:
@@ -151,6 +179,8 @@ class RequestPipeline:
             request = build_request(
                 operation.method,
                 url,
+                params=query,
+                json=json_body,
                 headers={
                     "Host": url.netloc.decode("ascii"),
                     "Authorization": f"Bearer {token}",
@@ -163,7 +193,7 @@ class RequestPipeline:
                 raise
             if request is not None and isinstance(error, httpx.HTTPStatusError):
                 status_code = _confirmed_status(error, request)
-        if status_code is not None and status_code != 200:
+        if status_code is not None and status_code != operation.success_status:
             raise _status_error(operation.info.name, status_code)
         # A borrowed hook can fail even after NOMAD accepted the request.
         raise TransportError(

@@ -19,12 +19,12 @@ NOMAD Central is the public deployment hosted by FAIRmat. A self-hosted NOMAD Oa
 
 1. Register a public OpenID Connect client in the Keycloak realm used by the Oasis. Enable the standard authorization code flow and require PKCE `S256`.
 2. Allow the loopback redirect on that client. Configure the allowed `127.0.0.1` path and, if the registration specifies a fixed port, pass that port to the SDK. The default callback path is `/`, with a port selected by the operating system. [OAuth loopback redirects](https://www.rfc-editor.org/rfc/rfc8252.html#section-7.3)
-3. Give users the complete HTTPS Oasis API URL, the public HTTPS realm issuer, the client ID, and any optional provider alias configured in the realm. Provide the authorization and token URLs or tell users to enable discovery. [SDK example](../../user/identity/index.md#browser-login)
+3. Give users the complete HTTPS Oasis API URL, the public HTTPS realm issuer, the client ID, and any optional provider alias configured in the realm. Provide the authorization and token URLs or tell users to enable discovery. [SDK example](../../user/identity/sign-in.md#browser-login)
 4. From a machine with a local browser, run the SDK example and confirm that `client.identity.me()` returns the expected Oasis account. The account must be authorized on that Oasis.
 
 ## Configure password login { #configure-password-login }
 
-For an Oasis that offers legacy password login, enable Direct Access Grants on the Keycloak client configured in the Oasis. Give SDK users the complete Oasis API URL. `PasswordCredential` sends the password to the Oasis's `/auth/token` over HTTPS, and the Oasis uses its own Keycloak configuration. Test with an authorized local account and use browser sign-in for accounts that require institutional SSO or interactive MFA. [SDK example](../../user/identity/index.md#password-login) · [Keycloak password grant](https://www.keycloak.org/securing-apps/oidc-layers#_resource_owner_password_credentials)
+For an Oasis that offers legacy password login, enable Direct Access Grants on the Keycloak client configured in the Oasis. Give SDK users the complete Oasis API URL. `PasswordCredential` sends the password to the Oasis's `/auth/token` over HTTPS, and the Oasis uses its own Keycloak configuration. Test with an authorized local account and use browser sign-in for accounts that require institutional SSO or interactive MFA. [SDK example](../../user/identity/sign-in.md#password-login) · [Keycloak password grant](https://www.keycloak.org/securing-apps/oidc-layers#_resource_owner_password_credentials)
 
 ## Trace a method to your Oasis
 

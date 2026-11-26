@@ -10,13 +10,18 @@ extra:
 extra_css:
   - stylesheets/extra.css
   - stylesheets/guide-switcher.css
+  - stylesheets/api-reference.css
 extra_javascript:
   - javascripts/guide-switcher.js
 nav:
   - Home: index.md
   - Usage:
       - Getting started: user/index.md
-      - Authentication: user/identity/index.md
+      - Authentication:
+          - Overview: user/identity/index.md
+          - Sign in: user/identity/sign-in.md
+          - Manage PATs: user/identity/pats.md
+          - Connections and HPC: user/identity/connections.md
       - API Reference:
           - Authentication: user/identity/api.md
       - REST Reference:
